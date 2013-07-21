@@ -1,0 +1,82 @@
+/* AGS - Advanced GTK Sequencer
+ * Copyright (C) 2005-2011 Joël Krähemann
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ */
+
+#ifndef __AGS_NAVIGATION_H__
+#define __AGS_NAVIGATION_H__
+
+#include <glib.h>
+#include <glib-object.h>
+#include <gtk/gtk.h>
+
+#include <ags/audio/ags_devout.h>
+
+#define AGS_TYPE_NAVIGATION                (ags_navigation_get_type())
+#define AGS_NAVIGATION(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_NAVIGATION, AgsNavigation))
+#define AGS_NAVIGATION_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST((class), AGS_TYPE_NAVIGATION, AgsNavigationClass))
+#define AGS_IS_NAVIGATION(obj)             (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AGS_TYPE_NAVIGATION))
+#define AGS_IS_NAVIGATION_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_NAVIGATION))
+#define AGS_NAVIGATION_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_NAVIGATION, AgsNavigationClass))
+
+typedef struct _AgsNavigation AgsNavigation;
+typedef struct _AgsNavigationClass AgsNavigationClass;
+
+struct _AgsNavigation
+{
+  GtkVBox vbox;
+
+  AgsDevout *devout;
+
+  GtkToggleButton *expander;
+
+  GtkSpinButton *bpm;
+  gdouble current_bpm;
+
+  GtkToggleButton *rewind;
+  GtkButton *previous;
+  GtkToggleButton *play;
+  GtkButton *stop;
+  GtkButton *next;
+  GtkToggleButton *forward;
+
+  GtkCheckButton *loop;
+
+  GtkSpinButton *position_min;
+  GtkSpinButton *position_sec;
+
+  GtkSpinButton *duration_min;
+  GtkSpinButton *duration_sec;
+
+  GtkSpinButton *loop_left_min;
+  GtkSpinButton *loop_left_sec;
+
+  GtkSpinButton *loop_right_min;
+  GtkSpinButton *loop_right_sec;
+
+  GtkCheckButton *raster;
+};
+
+struct _AgsNavigationClass
+{
+  GtkVBoxClass vbox;
+};
+
+GType ags_navigation_get_type(void);
+
+AgsNavigation* ags_navigation_new();
+
+#endif /*__AGS_NAVIGATION_H__*/

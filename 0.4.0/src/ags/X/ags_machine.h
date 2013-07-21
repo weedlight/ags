@@ -1,0 +1,92 @@
+/* AGS - Advanced GTK Sequencer
+ * Copyright (C) 2005-2011 Joël Krähemann
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ */
+
+#ifndef __AGS_MACHINE_H__
+#define __AGS_MACHINE_H__
+
+#include <glib.h>
+#include <glib-object.h>
+#include <gtk/gtk.h>
+
+#include <ags/audio/ags_audio.h>
+
+#include <ags/file/ags_file.h>
+
+#define AGS_TYPE_MACHINE                (ags_machine_get_type())
+#define AGS_MACHINE(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_MACHINE, AgsMachine))
+#define AGS_MACHINE_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST((class), AGS_TYPE_MACHINE, AgsMachineClass))
+#define AGS_IS_MACHINE(obj)             (G_TYPE_CHECK_INSTANCE_TYPE((obj), AGS_TYPE_MACHINE))
+#define AGS_IS_MACHINE_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_MACHINE))
+#define AGS_MACHINE_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_MACHINE, AgsMachineClass))
+
+typedef struct _AgsMachine AgsMachine;
+typedef struct _AgsMachineClass AgsMachineClass;
+
+typedef enum{
+  AGS_MACHINE_SOLO              = 1,
+  AGS_MACHINE_IS_EFFECT         = 1 <<  1,
+  AGS_MACHINE_IS_SEQUENCER      = 1 <<  2,
+  AGS_MACHINE_IS_SYNTHESIZER    = 1 <<  3,
+  AGS_MACHINE_TAKES_FILE_INPUT  = 1 <<  4,
+}AgsMachineFlags;
+
+typedef enum{
+  AGS_MACHINE_ACCEPT_WAV          = 1,
+  AGS_MACHINE_ACCEPT_OGG          = 1 <<  1,
+  AGS_MACHINE_ACCEPT_SOUNDFONT2   = 1 <<  2,
+}AgsMachineFileInputFlags;
+
+struct _AgsMachine
+{
+  GtkHandleBox handle_box;
+
+  guint flags;
+  guint file_input_flags;
+
+  char *name;
+
+  AgsAudio *audio;
+
+  GtkContainer *output;
+  GtkContainer *input;
+
+  GtkMenu *popup;
+  GtkDialog *properties;
+  GtkDialog *rename;
+};
+
+struct _AgsMachineClass
+{
+  GtkHandleBoxClass handle_box;
+};
+
+GType ags_machine_get_type(void);
+
+GtkListStore* ags_machine_get_possible_links(AgsMachine *machine);
+
+AgsMachine* ags_machine_find_by_name(GList *list, char *name);
+
+GtkFileChooserDialog* ags_machine_file_chooser_dialog_new(AgsMachine *machine);
+void ags_machine_open_files(AgsMachine *machine,
+			    GSList *filenames,
+			    gboolean overwrite_channels,
+			    gboolean create_channels);
+
+AgsMachine* ags_machine_new(GObject *devout);
+
+#endif /*__AGS_MACHINE_H__*/
