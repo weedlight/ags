@@ -19,7 +19,7 @@
 #include <ags/X/machine/ags_panel.h>
 #include <ags/X/machine/ags_panel_callbacks.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
 
 #include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_input.h>
@@ -302,7 +302,7 @@ ags_panel_new(GObject *devout)
   if(devout != NULL){
     g_value_init(&value, G_TYPE_OBJECT);
     g_value_set_object(&value, devout);
-    g_object_set_property(G_OBJECT(panel->machine.audio),
+    g_object_set_property(G_OBJECT(AGS_MACHINE(panel)->audio),
 			  "devout\0", &value);
     g_value_unset(&value);
   }

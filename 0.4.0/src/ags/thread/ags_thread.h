@@ -23,6 +23,7 @@
 #include <glib-object.h>
 
 #define _GNU_SOURCE
+
 #include <pthread.h>
 
 #define AGS_TYPE_THREAD                (ags_thread_get_type())
@@ -31,8 +32,6 @@
 #define AGS_IS_THREAD(obj)             (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AGS_TYPE_THREAD))
 #define AGS_IS_THREAD_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_THREAD))
 #define AGS_THREAD_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS(obj, AGS_TYPE_THREAD, AgsThreadClass))
-
-#define PTHREAD_MUTEX_TO_POINTER(mutex) ((gpointer) (&mutex))
 
 typedef struct _AgsThread AgsThread;
 typedef struct _AgsThreadClass AgsThreadClass;
@@ -59,26 +58,53 @@ typedef enum{
   AGS_THREAD_WAIT_1                  = 1 << 18,
   AGS_THREAD_TREE_SYNC_2             = 1 << 19,
   AGS_THREAD_WAIT_2                  = 1 << 20,
+  AGS_THREAD_TIMELOCK_RUN            = 1 << 21,
+  AGS_THREAD_TIMELOCK_WAIT           = 1 << 22,
+  AGS_THREAD_TIMELOCK_RESUME         = 1 << 23,
+  /*
+   * prefered way would be unlocking greedy_locks
+   * and the suspend to not become greedy
+   * but while pthread_suspend and pthread_resume
+   * are missing you need this as work-around
+   */
+  AGS_THREAD_SKIP_NON_GREEDY         = 1 << 24,
+  AGS_THREAD_SKIPPED_BY_TIMELOCK     = 1 << 25,
+  AGS_THREAD_LOCK_GREEDY_RUN_MUTEX   = 1 << 26,
 }AgsThreadFlags;
 
 struct _AgsThread
 {
   GObject object;
 
-  guint flags;
+  volatile guint flags;
 
   pthread_t thread;
+  pthread_attr_t thread_attr;
+
   pthread_mutex_t mutex;
   pthread_mutexattr_t mutexattr;
-  pthread_cond_t start_cond;
   pthread_cond_t cond;
-  GList *unlocked;
+
+  pthread_mutex_t start_mutex;
+  pthread_cond_t start_cond;
 
   pthread_barrier_t barrier[2];
   gboolean first_barrier;
   int wait_count[2];
 
-  GObject *devout; //WARNING: will be removed after refactoring
+  pthread_t timelock_thread;
+  pthread_mutex_t timelock_mutex;
+  pthread_cond_t timelock_cond;
+
+  pthread_mutex_t greedy_mutex;
+  pthread_cond_t greedy_cond;
+  pthread_mutex_t greedy_run_mutex;
+  volatile guint locked_greedy;
+
+  struct timespec timelock;
+  GList *greedy_locks;
+
+  GObject *devout;
   AgsThread *parent;
 
   AgsThread *next;
@@ -95,12 +121,14 @@ struct _AgsThreadClass
 
   void (*start)(AgsThread *thread);
   void (*run)(AgsThread *thread);
+  void (*timelock)(AgsThread *thread);
   void (*stop)(AgsThread *thread);
 };
 
 GType ags_thread_get_type();
 
 void ags_thread_lock(AgsThread *thread);
+gboolean ags_thread_trylock(AgsThread *thread);
 void ags_thread_unlock(AgsThread *thread);
 
 AgsThread* ags_thread_get_toplevel(AgsThread *thread);
@@ -114,10 +142,11 @@ gboolean ags_thread_parental_is_locked(AgsThread *thread, AgsThread *parent);
 gboolean ags_thread_sibling_is_locked(AgsThread *thread);
 gboolean ags_thread_children_is_locked(AgsThread *thread);
 
-gboolean ags_thread_is_current_ready(AgsThread *current, guint tic);
-gboolean ags_thread_is_tree_ready(AgsThread *thread, guint  current_tic);
-gboolean ags_thread_is_tree_in_sync(AgsThread *thread, guint tic);
-void ags_thread_main_loop_unlock_children(AgsThread *thread, guint current_tic);
+gboolean ags_thread_is_current_ready(AgsThread *current);
+gboolean ags_thread_is_current_synced(AgsThread *current);
+gboolean ags_thread_is_tree_ready(AgsThread *thread);
+gboolean ags_thread_is_tree_synced(AgsThread *thread);
+void ags_thread_main_loop_unlock_children(AgsThread *thread);
 
 AgsThread* ags_thread_next_parent_locked(AgsThread *thread, AgsThread *parent);
 AgsThread* ags_thread_next_sibling_locked(AgsThread *thread);
@@ -126,10 +155,12 @@ AgsThread* ags_thread_next_children_locked(AgsThread *thread);
 void ags_thread_lock_parent(AgsThread *thread, AgsThread *parent);
 void ags_thread_lock_sibling(AgsThread *thread);
 void ags_thread_lock_children(AgsThread *thread);
+void ags_thread_lock_all(AgsThread *thread);
 
 void ags_thread_unlock_parent(AgsThread *thread, AgsThread *parent);
 void ags_thread_unlock_sibling(AgsThread *thread);
 void ags_thread_unlock_children(AgsThread *thread);
+void ags_thread_unlock_all(AgsThread *thread);
 
 void ags_thread_wait_parent(AgsThread *thread, AgsThread *parent);
 void ags_thread_wait_sibling(AgsThread *thread);
@@ -141,6 +172,7 @@ void ags_thread_signal_children(AgsThread *thread, gboolean broadcast);
 
 void ags_thread_start(AgsThread *thread);
 void ags_thread_run(AgsThread *thread);
+void ags_thread_timelock(AgsThread *thread);
 void ags_thread_stop(AgsThread *thread);
 
 AgsThread* ags_thread_new(GObject *data);

@@ -19,7 +19,7 @@
 #include <ags/X/machine/ags_matrix.h>
 #include <ags/X/machine/ags_matrix_callbacks.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
 
 #include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_channel.h>
@@ -37,6 +37,8 @@
 #include <ags/audio/recall/ags_stream_channel_run.h>
 #include <ags/audio/recall/ags_copy_pattern_channel.h>
 #include <ags/audio/recall/ags_copy_pattern_channel_run.h>
+
+#include <ags/widget/ags_led.h>
 
 #include <ags/X/ags_menu_bar.h>
 
@@ -153,16 +155,19 @@ ags_matrix_init(AgsMatrix *matrix)
 {
   AgsAudio *audio;
   AgsRecallContainer *recall_container;
+  AgsRecallAudio *recall_audio;
   AgsDelayAudio *delay_audio;
   AgsDelayAudioRun *play_delay_audio_run, *recall_delay_audio_run;
   AgsCountBeatsAudio *count_beats_audio;
   AgsCountBeatsAudioRun *play_count_beats_audio_run, *recall_count_beats_audio_run;
   AgsCopyPatternAudio *copy_pattern_audio;
   AgsCopyPatternAudioRun *copy_pattern_audio_run;
+  AgsPlayNotation *play_notation;
   GtkFrame *frame;
   GtkTable *table;
   GtkToggleButton *button;
   GtkVScrollbar *vscrollbar;
+  AgsLed *led;
   GtkVBox *vbox;
   GtkHBox *hbox;
   int i, j;
@@ -375,6 +380,37 @@ ags_matrix_init(AgsMatrix *matrix)
 						AGS_RECALL_INPUT_ORIENTATED);
   ags_audio_add_recall(audio, (GObject *) copy_pattern_audio_run, FALSE);
 
+  /* audio->recall */
+  /* create AgsRecallContainer for delay related recalls */
+  recall_container = ags_recall_container_new();
+  ags_audio_add_recall_container(audio, (GObject *) recall_container);
+
+  /* create dummy AgsRecallAudio in audio->recall */
+  recall_audio = (AgsPlayNotation *) g_object_new(AGS_TYPE_RECALL_AUDIO,
+						  "devout\0", audio->devout,
+						  "audio\0", audio,
+						  "recall_container\0", recall_container,
+						  NULL);
+  AGS_RECALL(recall_audio)->flags |= (AGS_RECALL_TEMPLATE |
+				      AGS_RECALL_NOTATION |
+				      AGS_RECALL_INPUT_ORIENTATED);
+  ags_audio_add_recall(audio, (GObject *) recall_audio, FALSE);
+
+  /* create AgsPlayNotation in audio->recall */
+  matrix->play_notation =
+    play_notation = (AgsPlayNotation *) g_object_new(AGS_TYPE_PLAY_NOTATION,
+						     "devout\0", audio->devout,
+						     "recall_container\0", recall_container,
+						     "recall_audio\0", recall_audio,
+						     "delay_audio_run\0", recall_delay_audio_run,
+						     "count_beats_audio_run\0", recall_count_beats_audio_run,
+						     // "notation\0", audio->notation,
+						     NULL);
+  AGS_RECALL(play_notation)->flags |= (AGS_RECALL_TEMPLATE |
+				       AGS_RECALL_NOTATION |
+				       AGS_RECALL_INPUT_ORIENTATED);
+  ags_audio_add_recall(audio, (GObject *) play_notation, FALSE);
+  
 
   /* create widgets */
   frame = (GtkFrame *) (gtk_container_get_children((GtkContainer *) matrix))->data;
@@ -390,7 +426,7 @@ ags_matrix_init(AgsMatrix *matrix)
 
   table = (GtkTable *) gtk_table_new(3, 3, FALSE);
   gtk_table_attach(matrix->table, (GtkWidget *) table,
-		   1, 2, 0, 1,
+		   1, 2, 0, 2,
 		   GTK_FILL, GTK_FILL,
 		   0, 0);
   matrix->selected = NULL;
@@ -410,6 +446,7 @@ ags_matrix_init(AgsMatrix *matrix)
   matrix->selected = matrix->index[0];
   gtk_toggle_button_set_active(matrix->selected, TRUE);
 
+  /* sequencer */
   table = (GtkTable *) gtk_table_new(2, 2, FALSE);
   gtk_table_attach(matrix->table, (GtkWidget *) table,
 		   2, 3, 0, 1,
@@ -430,7 +467,6 @@ ags_matrix_init(AgsMatrix *matrix)
                          | GDK_POINTER_MOTION_MASK
                          | GDK_POINTER_MOTION_HINT_MASK);
 
-
   matrix->adjustment = (GtkAdjustment *) gtk_adjustment_new(0.0, 0.0, 77.0, 1.0, 1.0, 8.0);
 
   vscrollbar = (GtkVScrollbar *) gtk_vscrollbar_new(matrix->adjustment);
@@ -440,6 +476,23 @@ ags_matrix_init(AgsMatrix *matrix)
 		   GTK_FILL, GTK_FILL,
 		   0, 0);
 
+  /* led */
+  matrix->active_led = 0;
+
+  matrix->led =
+    hbox = (GtkHBox *) gtk_hbox_new(FALSE, 0);
+  gtk_table_attach(matrix->table, (GtkWidget *) hbox,
+		   2, 3, 1, 2,
+		   GTK_FILL, GTK_FILL,
+		   0, 0);
+
+  for(i = 0; i < 32; i++){
+    led = ags_led_new();
+    gtk_widget_set_size_request((GtkWidget *) led, AGS_MATRIX_CELL_WIDTH, AGS_MATRIX_CELL_WIDTH / 2);
+    gtk_box_pack_start((GtkBox *) hbox, (GtkWidget *) led, FALSE, FALSE, 0);
+  }
+
+  /*  */
   vbox = (GtkVBox *) gtk_vbox_new(FALSE, 0);
   gtk_table_attach(matrix->table, (GtkWidget *) vbox,
 		   3, 4, 0, 1,
@@ -475,13 +528,23 @@ void
 ags_matrix_connect(AgsConnectable *connectable)
 {
   AgsMatrix *matrix;
+  AgsRecallHandler *recall_handler;
   int i;
 
   ags_matrix_parent_connectable_interface->connect(connectable);
 
-  /* AgsMatrix */
   matrix = AGS_MATRIX(connectable);
 
+  /* recall */
+  recall_handler = (AgsRecallHandler *) malloc(sizeof(AgsRecallHandler));
+
+  recall_handler->signal_name = "sequencer_count\0";
+  recall_handler->callback = G_CALLBACK(ags_matrix_sequencer_count_callback);
+  recall_handler->data = (gpointer) matrix;
+
+  ags_recall_add_handler(AGS_RECALL(matrix->recall_delay_audio_run), recall_handler);
+
+  /* AgsMatrix */
   g_signal_connect(G_OBJECT(matrix->run), "clicked\0",
 		   G_CALLBACK(ags_matrix_run_callback), (gpointer) matrix);
 
@@ -568,6 +631,27 @@ ags_matrix_set_pads(AgsAudio *audio, GType type,
     grow = FALSE;
 
   if(type == AGS_TYPE_INPUT){
+    AgsPlayNotation  *play_notation;
+    GList *list, *notation;
+
+    list = audio->recall;
+
+    while((list = ags_recall_find_type(list,
+				       AGS_TYPE_PLAY_NOTATION)) != NULL){
+      play_notation = AGS_PLAY_NOTATION(list->data);
+
+      notation = audio->notation;
+	
+      while(notation != NULL){
+	g_object_set(G_OBJECT(play_notation),
+		     "notation\0", notation->data,
+		     NULL);
+	
+	notation = notation->next;
+      }
+
+      list = list->next;
+    }
 
     if(grow){
       source = ags_channel_nth(audio->input, pads_old);

@@ -49,7 +49,8 @@
 #define AGS_DEVOUT_PLAY(ptr)           ((AgsDevoutPlay *)(ptr))
 
 #define AGS_DEVOUT_DEFAULT_SAMPLERATE (44100)
-#define AGS_DEVOUT_DEFAULT_BUFFER_SIZE (128)
+#define AGS_DEVOUT_DEFAULT_BUFFER_SIZE (940)
+#define AGS_DEVOUT_DEFAULT_BPM (120.0)
 
 typedef struct _AgsDevout AgsDevout;
 typedef struct _AgsDevoutClass AgsDevoutClass;
@@ -84,6 +85,14 @@ typedef enum
   AGS_DEVOUT_PLAY_NOTATION          = 1 <<  5,
   AGS_DEVOUT_PLAY_SUPER_THREADED    = 1 <<  6,
 }AgsDevoutPlayFlags;
+
+typedef enum{
+  AGS_DEVOUT_RESOLUTION_8_BIT    = 8,
+  AGS_DEVOUT_RESOLUTION_16_BIT   = 16,
+  AGS_DEVOUT_RESOLUTION_24_BIT   = 24,
+  AGS_DEVOUT_RESOLUTION_32_BIT   = 32,
+  AGS_DEVOUT_RESOLUTION_64_BIT   = 64,
+}AgsDevoutResolutionMode;
 
 #define AGS_DEVOUT_ERROR (ags_devout_error_quark())
 
@@ -133,6 +142,8 @@ struct _AgsDevout
       snd_pcm_hw_params_t *params;
     }alsa;
   }out;
+
+  GObject *main;
   
   GList *audio;
 
@@ -145,8 +156,6 @@ struct _AgsDevoutClass
 {
   GObjectClass object;
 
-  void (*run)(AgsDevout *devout);
-  void (*stop)(AgsDevout *devout);
   void (*tic)(AgsDevout *devout);
 
   void (*note_offset_changed)(AgsDevout *devout, guint note_offset);
@@ -171,21 +180,18 @@ GQuark ags_devout_error_quark();
 
 AgsDevoutPlay* ags_devout_play_alloc();
 
-GList *ags_devout_list_cards();
+void ags_devout_list_cards(GList **card_id, GList **card_name);
 void ags_devout_pcm_info(char *card_id,
 			 guint *channels_min, guint *channels_max,
 			 guint *rate_min, guint *rate_max,
 			 guint *buffer_size_min, guint *buffer_size_max,
 			 GError **error);
-
-void ags_devout_run(AgsDevout *devout);
-void ags_devout_stop(AgsDevout *devout);
 void ags_devout_tic(AgsDevout *devout);
 
 void ags_devout_note_offset_changed(AgsDevout *devout, guint note_offset);
 
 void ags_devout_start_default_threads(AgsDevout *devout);
 
-AgsDevout* ags_devout_new();
+AgsDevout* ags_devout_new(GObject *main);
 
 #endif /*__AGS_DEVOUT_H__*/

@@ -18,6 +18,8 @@
 
 #include <ags/X/ags_window_callbacks.h>
 
+#include <ags/main.h>
+
 gboolean
 ags_window_delete_event_callback(GtkWidget *widget, gpointer data)
 {
@@ -44,7 +46,7 @@ ags_window_delete_event_callback(GtkWidget *widget, gpointer data)
   if(response == GTK_RESPONSE_YES){
     AgsFile *file;
 
-    file = ags_file_new();
+    file = ags_file_new(window->main);
     file->window = (GtkWidget *) window;
     file->name = g_strdup(window->name);
     ags_file_write(file);
@@ -52,7 +54,7 @@ ags_window_delete_event_callback(GtkWidget *widget, gpointer data)
   }
 
   if(response != GTK_RESPONSE_CANCEL){
-    gtk_main_quit();
+    ags_main_quit(AGS_MAIN(window->main));
   }else{
     gtk_widget_destroy(GTK_WIDGET(dialog));
   }

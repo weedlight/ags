@@ -38,8 +38,7 @@ struct _AgsDevoutThread
 {
   AgsThread thread;
 
-  GObject *devout;
-  pthread_cond_t start_play_cond;
+  GError *error;
 };
 
 struct _AgsDevoutThreadClass

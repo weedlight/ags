@@ -31,6 +31,7 @@
 #include <ags/audio/recall/ags_count_beats_audio_run.h>
 #include <ags/audio/recall/ags_copy_pattern_audio.h>
 #include <ags/audio/recall/ags_copy_pattern_audio_run.h>
+#include <ags/audio/recall/ags_play_notation.h>
 
 #define AGS_TYPE_MATRIX                (ags_matrix_get_type())
 #define AGS_MATRIX(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_MATRIX, AgsMatrix))
@@ -63,6 +64,8 @@ struct _AgsMatrix
   AgsCopyPatternAudio *recall_copy_pattern_audio;
   AgsCopyPatternAudioRun *recall_copy_pattern_audio_run;
 
+  AgsPlayNotation *play_notation;
+
   GtkTable *table;
 
   GtkToggleButton *run;
@@ -70,6 +73,8 @@ struct _AgsMatrix
   GtkToggleButton *index[9];
 
   GtkDrawingArea *drawing_area;
+  guint active_led;
+  GtkHBox *led;
 
   GtkAdjustment *adjustment;
 

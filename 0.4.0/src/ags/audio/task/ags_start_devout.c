@@ -18,7 +18,7 @@
 
 #include <ags/audio/task/ags_start_devout.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
 
 #include <ags/thread/ags_audio_loop.h>
 #include <ags/thread/ags_devout_thread.h>
@@ -137,6 +137,7 @@ ags_start_devout_launch(AgsTask *task)
   AgsDevout *devout;
   AgsAudioLoop *audio_loop;
   AgsDevoutThread *devout_thread;
+  GError *error;
 
   start_devout = AGS_START_DEVOUT(task);
 
@@ -149,18 +150,24 @@ ags_start_devout_launch(AgsTask *task)
   audio_loop->flags |= (AGS_AUDIO_LOOP_PLAY_AUDIO |
 			AGS_AUDIO_LOOP_PLAY_CHANNEL |
 			AGS_AUDIO_LOOP_PLAY_RECALL);
-  devout->flags |= (AGS_DEVOUT_START_PLAY);
+  devout->flags |= (AGS_DEVOUT_START_PLAY |
+		    AGS_DEVOUT_PLAY);
 
-  ags_devout_run(devout);
-
-  ags_thread_lock(AGS_THREAD(devout_thread));
+  ags_thread_start(AGS_THREAD(devout_thread));
+  
+  pthread_mutex_lock(&(AGS_THREAD(devout_thread)->start_mutex));
 
   while((AGS_DEVOUT_START_PLAY & (devout->flags)) != 0){
-    pthread_cond_wait(&(devout_thread->start_play_cond),
-		      &(AGS_THREAD(devout_thread)->mutex));
+    pthread_cond_wait(&(AGS_THREAD(devout_thread)->start_cond),
+		      &(AGS_THREAD(devout_thread)->start_mutex));
   }
 
   ags_thread_unlock(AGS_THREAD(devout_thread));
+  pthread_mutex_unlock(&(AGS_THREAD(devout_thread)->start_mutex));
+
+  if(devout_thread->error != NULL){
+    ags_task_failure(AGS_TASK(start_devout), error);
+  }
 }
 
 AgsStartDevout*

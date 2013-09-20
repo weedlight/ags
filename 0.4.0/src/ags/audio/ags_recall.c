@@ -18,12 +18,15 @@
 
 #include <ags/audio/ags_recall.h>
 
+#include <ags-lib/object/ags_connectable.h>
+
+#include <ags/main.h>
+
 #include <ags/lib/ags_parameter.h>
 
 #include <ags/object/ags_marshal.h>
-#include <ags/object/ags_connectable.h>
 #include <ags/object/ags_packable.h>
-#include <ags/object/ags_run_connectable.h>
+#include <ags/object/ags_dynamic_connectable.h>
 
 #include <ags/audio/ags_devout.h>
 #include <ags/audio/ags_recall_container.h>
@@ -41,7 +44,7 @@
 void ags_recall_class_init(AgsRecallClass *recall_class);
 void ags_recall_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_recall_packable_interface_init(AgsPackableInterface *packable);
-void ags_recall_run_connectable_interface_init(AgsRunConnectableInterface *run_connectable);
+void ags_recall_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable);
 void ags_recall_init(AgsRecall *recall);
 void ags_recall_set_property(GObject *gobject,
 			     guint prop_id,
@@ -55,8 +58,8 @@ void ags_recall_connect(AgsConnectable *connectable);
 void ags_recall_disconnect(AgsConnectable *connectable);
 gboolean ags_recall_pack(AgsPackable *packable, GObject *container);
 gboolean ags_recall_unpack(AgsPackable *packable);
-void ags_recall_run_connect(AgsRunConnectable *run_connectable);
-void ags_recall_run_disconnect(AgsRunConnectable *run_connectable);
+void ags_recall_connect_dynamic(AgsDynamicConnectable *dynamic_connectable);
+void ags_recall_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable);
 void ags_recall_finalize(GObject *recall);
 
 void ags_recall_real_run_init_pre(AgsRecall *recall);
@@ -138,8 +141,8 @@ ags_recall_get_type (void)
       NULL, /* interface_data */
     };
 
-    static const GInterfaceInfo ags_run_connectable_interface_info = {
-      (GInterfaceInitFunc) ags_recall_run_connectable_interface_init,
+    static const GInterfaceInfo ags_dynamic_connectable_interface_info = {
+      (GInterfaceInitFunc) ags_recall_dynamic_connectable_interface_init,
       NULL, /* interface_finalize */
       NULL, /* interface_data */
     };
@@ -158,8 +161,8 @@ ags_recall_get_type (void)
 				&ags_packable_interface_info);
 
     g_type_add_interface_static(ags_type_recall,
-				AGS_TYPE_RUN_CONNECTABLE,
-				&ags_run_connectable_interface_info);
+				AGS_TYPE_DYNAMIC_CONNECTABLE,
+				&ags_dynamic_connectable_interface_info);
   }
 
   return(ags_type_recall);
@@ -413,10 +416,10 @@ ags_recall_packable_interface_init(AgsPackableInterface *packable)
 }
 
 void
-ags_recall_run_connectable_interface_init(AgsRunConnectableInterface *run_connectable)
+ags_recall_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable)
 {
-  run_connectable->connect = ags_recall_run_connect;
-  run_connectable->disconnect = ags_recall_run_disconnect;
+  dynamic_connectable->connect_dynamic = ags_recall_connect_dynamic;
+  dynamic_connectable->disconnect_dynamic = ags_recall_disconnect_dynamic;
 }
 
 void
@@ -456,7 +459,8 @@ ags_recall_set_property(GObject *gobject,
   case PROP_DEVOUT:
     {
       AgsDevout *devout;
-
+      GList *current;
+      
       devout = (AgsDevout *) g_value_get_object(value);
 
       if(devout == ((AgsDevout *) recall->devout))
@@ -469,6 +473,16 @@ ags_recall_set_property(GObject *gobject,
 	g_object_ref(G_OBJECT(devout));
 
       recall->devout = (GObject *) devout;
+
+      current = recall->children;
+
+      while(current != NULL){
+	g_object_set(G_OBJECT(current->data),
+		     "devout\0", devout,
+		     NULL);
+
+	current = current->next;
+      }
     }
     break;
   case PROP_CONTAINER:
@@ -595,6 +609,16 @@ ags_recall_connect(AgsConnectable *connectable)
     list = list->next;
   }
 
+  /* handlers */
+  list = recall->handlers;
+
+  while(list != NULL){
+    g_signal_connect(G_OBJECT(recall), AGS_RECALL_HANDLER(list->data)->signal_name,
+		     AGS_RECALL_HANDLER(list->data)->callback, AGS_RECALL_HANDLER(list->data)->data);
+
+    list = list->next;
+  }
+
   recall->flags |= AGS_RECALL_CONNECTED;
 }
 
@@ -660,19 +684,19 @@ ags_recall_unpack(AgsPackable *packable)
 }
 
 void
-ags_recall_run_connect(AgsRunConnectable *run_connectable)
+ags_recall_connect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 {
   AgsRecall *recall;
   AgsRecallHandler *recall_handler;
   GList *list;
 
-  recall = AGS_RECALL(run_connectable);
+  recall = AGS_RECALL(dynamic_connectable);
 
   /* connect children */
   list = recall->children;
 
   while(list != NULL){
-    ags_run_connectable_connect(AGS_RUN_CONNECTABLE(list->data));
+    ags_dynamic_connectable_connect_dynamic(AGS_DYNAMIC_CONNECTABLE(list->data));
 
     list = list->next;
   }
@@ -692,19 +716,19 @@ ags_recall_run_connect(AgsRunConnectable *run_connectable)
 }
 
 void
-ags_recall_run_disconnect(AgsRunConnectable *run_connectable)
+ags_recall_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 {
   AgsRecall *recall;
   AgsRecallHandler *recall_handler;
   GList *list;
 
-  recall = AGS_RECALL(run_connectable);
+  recall = AGS_RECALL(dynamic_connectable);
 
   /* disconnect children */
   list = recall->children;
 
   while(list != NULL){
-    ags_run_connectable_disconnect(AGS_RUN_CONNECTABLE(list->data));
+    ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(list->data));
 
     list = list->next;
   }
@@ -730,7 +754,7 @@ ags_recall_finalize(GObject *gobject)
 
   recall = AGS_RECALL(gobject);
 
-  g_message("finalize %s\n\0", G_OBJECT_TYPE_NAME(gobject));
+  //  g_message("finalize %s\n\0", G_OBJECT_TYPE_NAME(gobject));
 
   if(recall->devout != NULL){
     g_object_unref(recall->devout);
@@ -741,7 +765,7 @@ ags_recall_finalize(GObject *gobject)
   }
 
   if((AGS_RECALL_RUN_INITIALIZED & (recall->flags)) != 0){
-    ags_run_connectable_disconnect(AGS_RUN_CONNECTABLE(recall));
+    ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(recall));
   }
 
   if(recall->name != NULL)
@@ -1040,11 +1064,11 @@ ags_recall_real_done(AgsRecall *recall)
     return;
   }
 
-  g_message("ags_recall_done: %s\n\0", G_OBJECT_TYPE_NAME(recall));
+  //  g_message("ags_recall_done: %s\n\0", G_OBJECT_TYPE_NAME(recall));
   recall->flags |= AGS_RECALL_DONE | AGS_RECALL_HIDE | AGS_RECALL_REMOVE;
 
-  if(AGS_IS_RUN_CONNECTABLE(recall)){
-    ags_run_connectable_disconnect(AGS_RUN_CONNECTABLE(recall));
+  if(AGS_IS_DYNAMIC_CONNECTABLE(recall)){
+    ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(recall));
   }
 }
 
@@ -1105,9 +1129,9 @@ ags_recall_real_remove(AgsRecall *recall)
 {
   AgsRecall *parent;
 
-  g_message("remove: %s\n\0", G_OBJECT_TYPE_NAME(recall));
+  //  g_message("remove: %s\n\0", G_OBJECT_TYPE_NAME(recall));
 
-  ags_run_connectable_disconnect(recall);
+  ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(recall));
 
   if(recall->parent == NULL){
     parent = NULL;
@@ -1414,7 +1438,7 @@ ags_recall_add_child(AgsRecall *parent, AgsRecall *child)
     ags_recall_run_init_inter(AGS_RECALL(child));
     ags_recall_run_init_post(AGS_RECALL(child));
 
-    ags_run_connectable_connect(AGS_RUN_CONNECTABLE(child));
+    ags_dynamic_connectable_connect_dynamic(AGS_DYNAMIC_CONNECTABLE(child));
     
     child->flags |= AGS_RECALL_RUN_INITIALIZED;
   }

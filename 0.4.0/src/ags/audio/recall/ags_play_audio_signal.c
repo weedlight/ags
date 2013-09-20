@@ -18,8 +18,8 @@
 
 #include <ags/audio/recall/ags_play_audio_signal.h>
 
-#include <ags/object/ags_connectable.h>
-#include <ags/object/ags_run_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
+#include <ags/object/ags_dynamic_connectable.h>
 
 #include <ags/audio/ags_devout.h>
 #include <ags/audio/ags_audio_signal.h>
@@ -33,12 +33,12 @@
 
 void ags_play_audio_signal_class_init(AgsPlayAudioSignalClass *play_audio_signal);
 void ags_play_audio_signal_connectable_interface_init(AgsConnectableInterface *connectable);
-void ags_play_audio_signal_run_connectable_interface_init(AgsRunConnectableInterface *run_connectable);
+void ags_play_audio_signal_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable);
 void ags_play_audio_signal_init(AgsPlayAudioSignal *play_audio_signal);
 void ags_play_audio_signal_connect(AgsConnectable *connectable);
 void ags_play_audio_signal_disconnect(AgsConnectable *connectable);
-void ags_play_audio_signal_run_connect(AgsRunConnectable *run_connectable);
-void ags_play_audio_signal_run_disconnect(AgsRunConnectable *run_connectable);
+void ags_play_audio_signal_connect_dynamic(AgsDynamicConnectable *dynamic_connectable);
+void ags_play_audio_signal_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable);
 void ags_play_audio_signal_finalize(GObject *gobject);
 
 void ags_play_audio_signal_run_init_pre(AgsRecall *recall);
@@ -49,7 +49,7 @@ AgsRecall* ags_play_audio_signal_duplicate(AgsRecall *recall,
 
 static gpointer ags_play_audio_signal_parent_class = NULL;
 static AgsConnectableInterface *ags_play_audio_signal_parent_connectable_interface;
-static AgsRunConnectableInterface *ags_play_audio_signal_parent_run_connectable_interface;
+static AgsDynamicConnectableInterface *ags_play_audio_signal_parent_dynamic_connectable_interface;
 
 GType
 ags_play_audio_signal_get_type()
@@ -75,8 +75,8 @@ ags_play_audio_signal_get_type()
       NULL, /* interface_data */
     };
 
-    static const GInterfaceInfo ags_run_connectable_interface_info = {
-      (GInterfaceInitFunc) ags_play_audio_signal_run_connectable_interface_init,
+    static const GInterfaceInfo ags_dynamic_connectable_interface_info = {
+      (GInterfaceInitFunc) ags_play_audio_signal_dynamic_connectable_interface_init,
       NULL, /* interface_finalize */
       NULL, /* interface_data */
     };
@@ -91,8 +91,8 @@ ags_play_audio_signal_get_type()
 				&ags_connectable_interface_info);
 
     g_type_add_interface_static(ags_type_play_audio_signal,
-				AGS_TYPE_RUN_CONNECTABLE,
-				&ags_run_connectable_interface_info);
+				AGS_TYPE_DYNAMIC_CONNECTABLE,
+				&ags_dynamic_connectable_interface_info);
   }
 
   return(ags_type_play_audio_signal);
@@ -130,12 +130,12 @@ ags_play_audio_signal_connectable_interface_init(AgsConnectableInterface *connec
 }
 
 void
-ags_play_audio_signal_run_connectable_interface_init(AgsRunConnectableInterface *run_connectable)
+ags_play_audio_signal_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable)
 {
-  ags_play_audio_signal_parent_run_connectable_interface = g_type_interface_peek_parent(run_connectable);
+  ags_play_audio_signal_parent_dynamic_connectable_interface = g_type_interface_peek_parent(dynamic_connectable);
 
-  run_connectable->connect = ags_play_audio_signal_run_connect;
-  run_connectable->disconnect = ags_play_audio_signal_run_disconnect;
+  dynamic_connectable->connect_dynamic = ags_play_audio_signal_connect_dynamic;
+  dynamic_connectable->disconnect_dynamic = ags_play_audio_signal_disconnect_dynamic;
 }
 
 void
@@ -170,17 +170,17 @@ ags_play_audio_signal_disconnect(AgsConnectable *connectable)
 }
 
 void
-ags_play_audio_signal_run_connect(AgsRunConnectable *run_connectable)
+ags_play_audio_signal_connect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 {
-  ags_play_audio_signal_parent_run_connectable_interface->connect(run_connectable);
+  ags_play_audio_signal_parent_dynamic_connectable_interface->connect_dynamic(dynamic_connectable);
 
   /* empty */
 }
 
 void
-ags_play_audio_signal_run_disconnect(AgsRunConnectable *run_connectable)
+ags_play_audio_signal_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 {
-  ags_play_audio_signal_parent_run_connectable_interface->disconnect(run_connectable);
+  ags_play_audio_signal_parent_dynamic_connectable_interface->disconnect_dynamic(dynamic_connectable);
 
   /* empty */
 }
@@ -188,15 +188,18 @@ ags_play_audio_signal_run_disconnect(AgsRunConnectable *run_connectable)
 void
 ags_play_audio_signal_run_init_pre(AgsRecall *recall)
 {
+  AgsAudioSignal *audio_signal;
   AgsPlayAudioSignal *play_audio_signal;
 
   play_audio_signal = AGS_PLAY_AUDIO_SIGNAL(recall);
   //  AGS_RECALL(play_audio_signal)->flags &= (~AGS_RECALL_PERSISTENT);
 
-  g_message("=======================\n\nplaying AgsAudioSignal#%llx on AgsDevout[%d]\n\n=======================\0",
-	    (long long unsigned int) AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->source,
-	    AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->audio_channel);
+  //  audio_signal = AGS_AUDIO_SIGNAL(AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->source);
 
+  //  g_message("=======================\n\nplaying AgsAudioSignal#%llx on AgsDevout[%d]\n\n=======================\0",
+  //	    (long long unsigned int) audio_signal,
+  //	    AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->audio_channel);
+  
   /* call parent */
   AGS_RECALL_CLASS(ags_play_audio_signal_parent_class)->run_init_pre(recall);
 }
@@ -210,7 +213,7 @@ ags_play_audio_signal_run_inter(AgsRecall *recall)
   AgsAudioSignal *source;
   GList *stream;
   signed short *buffer0, *buffer1;
-  AgsAttack *attack;
+  //  AgsAttack *attack;
   guint audio_channel;
 
   play_audio_signal = AGS_PLAY_AUDIO_SIGNAL(recall);
@@ -218,6 +221,11 @@ ags_play_audio_signal_run_inter(AgsRecall *recall)
   devout = AGS_DEVOUT(AGS_RECALL(play_audio_signal)->devout);
   source = AGS_AUDIO_SIGNAL(AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->source);
   stream = source->stream_current;
+
+  if(devout == NULL){
+    g_warning("no devout\0");
+    return;
+  }
 
   if(stream == NULL){
     ags_recall_done(recall);
@@ -237,20 +245,25 @@ ags_play_audio_signal_run_inter(AgsRecall *recall)
   }else if((AGS_DEVOUT_BUFFER3 & devout->flags) != 0){
     buffer0 = devout->buffer[0];
     buffer1 = devout->buffer[1];
+  }else{
+    g_warning("no output buffer\0");
+    return;
   }
 
-  //  attack = play_audio_signal->attack;
   audio_channel = AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->audio_channel;
+  //  attack = AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->attack;
 
-  ags_audio_signal_copy_buffer_to_buffer(&(buffer0[audio_channel]), devout->pcm_channels,
+  ags_audio_signal_copy_buffer_to_buffer(&(buffer0[devout->pcm_channels]),
+					 devout->pcm_channels,
 					 (signed short *) stream->data, 1,
 					 devout->buffer_size);
 
-//  if(attack->first_start != 0){
-//    ags_audio_signal_copy_buffer_to_buffer(&(buffer1[audio_channel]), devout->pcm_channels,
-//					   &(((signed short *) stream->data)[attack->first_length]), 1,
-//					   attack->first_start);
-//  }
+  //  if(attack->first_start != 0){
+  //    ags_audio_signal_copy_buffer_to_buffer(&(buffer1[audio_channel]), devout->pcm_channels,
+  //					   &(((signed short *) stream->data)[attack->first_length]), 1,
+  //					   attack->first_start);
+  //  }
+
   /* call parent */
   AGS_RECALL_CLASS(ags_play_audio_signal_parent_class)->run_inter(recall);
 }

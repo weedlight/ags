@@ -18,7 +18,7 @@
 
 #include <ags/audio/ags_task.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
 
 void ags_task_class_init(AgsTaskClass *task);
 void ags_task_connectable_interface_init(AgsConnectableInterface *connectable);
@@ -163,6 +163,18 @@ ags_task_launch(AgsTask *task)
   g_object_ref(G_OBJECT(task));
   g_signal_emit(G_OBJECT(task),
 		task_signals[LAUNCH], 0);
+  g_object_unref(G_OBJECT(task));
+}
+
+void
+ags_task_failure(AgsTask *task, GError *error)
+{
+  g_return_if_fail(AGS_IS_TASK(task));
+
+  g_object_ref(G_OBJECT(task));
+  g_signal_emit(G_OBJECT(task),
+		task_signals[FAILURE], 0,
+		error);
   g_object_unref(G_OBJECT(task));
 }
 

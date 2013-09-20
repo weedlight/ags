@@ -19,7 +19,9 @@
 #include <ags/X/ags_audio_preferences.h>
 #include <ags/X/ags_audio_preferences_callbacks.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
+
+#include <ags/object/ags_applicable.h>
 
 #include <ags/audio/ags_devout.h>
 
@@ -28,14 +30,15 @@
 
 void ags_audio_preferences_class_init(AgsAudioPreferencesClass *audio_preferences);
 void ags_audio_preferences_connectable_interface_init(AgsConnectableInterface *connectable);
+void ags_audio_preferences_applicable_interface_init(AgsApplicableInterface *applicable);
 void ags_audio_preferences_init(AgsAudioPreferences *audio_preferences);
 void ags_audio_preferences_connect(AgsConnectable *connectable);
 void ags_audio_preferences_disconnect(AgsConnectable *connectable);
+void ags_audio_preferences_set_update(AgsApplicable *applicable, gboolean update);
+void ags_audio_preferences_apply(AgsApplicable *applicable);
+void ags_audio_preferences_reset(AgsApplicable *applicable);
 static void ags_audio_preferences_finalize(GObject *gobject);
 void ags_audio_preferences_show(GtkWidget *widget);
-
-void ags_audio_preferences_reset(AgsAudioPreferences *audio_preferences);
-void* ags_audio_preferences_refresh(void *ptr);
 
 static gpointer ags_audio_preferences_parent_class = NULL;
 
@@ -62,6 +65,12 @@ ags_audio_preferences_get_type(void)
       NULL, /* interface_finalize */
       NULL, /* interface_data */
     };
+
+    static const GInterfaceInfo ags_applicable_interface_info = {
+      (GInterfaceInitFunc) ags_audio_preferences_applicable_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
     
     ags_type_audio_preferences = g_type_register_static(GTK_TYPE_VBOX,
 							"AgsAudioPreferences\0", &ags_audio_preferences_info,
@@ -70,6 +79,10 @@ ags_audio_preferences_get_type(void)
     g_type_add_interface_static(ags_type_audio_preferences,
 				AGS_TYPE_CONNECTABLE,
 				&ags_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_audio_preferences,
+				AGS_TYPE_APPLICABLE,
+				&ags_applicable_interface_info);
   }
 
   return(ags_type_audio_preferences);
@@ -99,6 +112,14 @@ ags_audio_preferences_connectable_interface_init(AgsConnectableInterface *connec
 {
   connectable->connect = ags_audio_preferences_connect;
   connectable->disconnect = ags_audio_preferences_disconnect;
+}
+
+void
+ags_audio_preferences_applicable_interface_init(AgsApplicableInterface *applicable)
+{
+  applicable->set_update = ags_audio_preferences_set_update;
+  applicable->apply = ags_audio_preferences_apply;
+  applicable->reset = ags_audio_preferences_reset;
 }
 
 void
@@ -229,28 +250,31 @@ ags_audio_preferences_disconnect(AgsConnectable *connectable)
 static void
 ags_audio_preferences_finalize(GObject *gobject)
 {
+  //TODO:JK: implement me
 }
 
 void
-ags_audio_preferences_show(GtkWidget *widget)
+ags_audio_preferences_set_update(AgsApplicable *applicable, gboolean update)
 {
-  AgsAudioPreferences *audio_preferences;
-  pthread_t thread;
-
-  audio_preferences = AGS_AUDIO_PREFERENCES(widget);
-  
-  GTK_WIDGET_CLASS(ags_audio_preferences_parent_class)->show(widget);
-
-  /* poll */
-  ags_audio_preferences_refresh(audio_preferences);
+  //TODO:JK: implement me
 }
 
 void
-ags_audio_preferences_reset(AgsAudioPreferences *audio_preferences)
+ags_audio_preferences_apply(AgsApplicable *applicable)
+{
+  //TODO:JK: implement me
+}
+
+void
+ags_audio_preferences_reset(AgsApplicable *applicable)
 {
   AgsWindow *window;
   AgsPreferences *preferences;
+  AgsAudioPreferences *audio_preferences;
   AgsDevout *devout;
+  GtkListStore *model;
+  GtkTreeIter iter;
+  GList *card_id, *card_name;
   char *device;
   int card_num;
   guint channels, channels_min, channels_max;
@@ -258,11 +282,35 @@ ags_audio_preferences_reset(AgsAudioPreferences *audio_preferences)
   guint buffer_size, buffer_size_min, buffer_size_max;
   GError *error;
 
+  audio_preferences = AGS_AUDIO_PREFERENCES(applicable);
+
   /*  */
   preferences = (AgsPreferences *) gtk_widget_get_ancestor(GTK_WIDGET(audio_preferences),
 							   AGS_TYPE_PREFERENCES);
   window = AGS_WINDOW(preferences->window);
 
+  /* refresh */
+  ags_devout_list_cards(&card_id, &card_name);
+  model = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_STRING);
+
+  while(card_id != NULL){
+    gtk_list_store_append(model, &iter);
+    gtk_list_store_set(model, &iter,
+		       0, card_id->data,
+		       1, card_name->data,
+		       -1);
+      
+    card_id = card_id->next;
+    card_name = card_name->next;
+  }
+
+  g_list_free(card_id);
+  g_list_free(card_name);
+
+  gtk_combo_box_set_model(audio_preferences->card,
+			  GTK_TREE_MODEL(model));
+
+  /*  */
   devout = window->devout;
   g_object_get(G_OBJECT(devout),
 	       "device\0", &device,
@@ -275,7 +323,8 @@ ags_audio_preferences_reset(AgsAudioPreferences *audio_preferences)
   error = NULL;
 
   /*  */
-  //  sscanf(device, "hw:%i\0", &card_num);
+  sscanf(device, "hw:%i\0", &card_num);
+
   //  gtk_combo_box_set_active(audio_preferences->card,
   //			   card_num);
 
@@ -288,10 +337,10 @@ ags_audio_preferences_reset(AgsAudioPreferences *audio_preferences)
 
   /*  */
   ags_devout_pcm_info(gtk_combo_box_get_active_text(audio_preferences->card),
-		      &channels_min, &channels_max,
-		      &rate_min, &rate_max,
-		      &buffer_size_min, &buffer_size_max,
-		      &error);
+  		      &channels_min, &channels_max,
+  		      &rate_min, &rate_max,
+  		      &buffer_size_min, &buffer_size_max,
+  		      &error);
 
   if(error != NULL){
     GtkMessageDialog *dialog;
@@ -320,45 +369,15 @@ ags_audio_preferences_reset(AgsAudioPreferences *audio_preferences)
 			    buffer_size_min, buffer_size_max);
 }
 
-void*
-ags_audio_preferences_refresh(void *ptr)
+void
+ags_audio_preferences_show(GtkWidget *widget)
 {
-  AgsPreferences *preferences;
   AgsAudioPreferences *audio_preferences;
-  GtkListStore *model;
-  GtkTreeIter iter;
-  GList *list;
-  int i;
+  pthread_t thread;
 
-  audio_preferences = AGS_AUDIO_PREFERENCES(ptr);
-
-  preferences = AGS_PREFERENCES(gtk_widget_get_ancestor(GTK_WIDGET(audio_preferences),
-							AGS_TYPE_PREFERENCES));
-
-  g_object_ref(preferences);
-
-  list = ags_devout_list_cards();
-  model = gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_STRING);
-  i = 0;
-
-  while(list != NULL){
-    gtk_list_store_append(model, &iter);
-    gtk_list_store_set(model, &iter,
-		       0, g_strdup_printf("hw:%i\0", i),
-		       1, g_strdup(list->data),
-		       -1);
-      
-    list = list->next;
-    i++;
-  }
-    
-  gtk_combo_box_set_model(audio_preferences->card,
-			  GTK_TREE_MODEL(model));
-
-  /* reset */
-  ags_audio_preferences_reset(audio_preferences);
-
-  g_object_unref(preferences);
+  audio_preferences = AGS_AUDIO_PREFERENCES(widget);
+  
+  GTK_WIDGET_CLASS(ags_audio_preferences_parent_class)->show(widget);
 }
 
 AgsAudioPreferences*

@@ -18,7 +18,7 @@
 
 #include <ags/thread/ags_devout_thread.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
 
 #include <ags/audio/ags_devout.h>
 
@@ -89,6 +89,7 @@ ags_devout_thread_class_init(AgsDevoutThreadClass *devout_thread)
   /* AgsThread */
   thread = (AgsThreadClass *) devout_thread;
 
+  thread->start = ags_devout_thread_start;
   thread->run = ags_devout_thread_run;
   thread->stop = ags_devout_thread_stop;
 }
@@ -109,7 +110,7 @@ ags_devout_thread_init(AgsDevoutThread *devout_thread)
 
   thread = AGS_THREAD(devout_thread);
 
-  thread->flags |= AGS_THREAD_WAIT_FOR_PARENT;
+  devout_thread->error = NULL;
 }
 
 void
@@ -141,22 +142,56 @@ ags_devout_thread_start(AgsThread *thread)
 {
   AgsDevout *devout;
   AgsDevoutThread *devout_thread;
-
-  AGS_THREAD_CLASS(ags_devout_thread_parent_class)->start(thread);
+  static gboolean initialized = FALSE;
+  GError *error;
 
   devout_thread = AGS_DEVOUT_THREAD(thread);
 
-  devout = AGS_DEVOUT(devout_thread->devout);
+  devout = AGS_DEVOUT(thread->devout);
 
-  ags_devout_alsa_init(devout);
+  /*  */
+  if((AGS_THREAD_INITIAL_RUN & (thread->flags)) != 0){
+    pthread_mutex_lock(&(thread->start_mutex));
+
+    thread->flags &= (~AGS_THREAD_INITIAL_RUN);
+    pthread_cond_broadcast(&(thread->start_cond));
+
+    pthread_mutex_unlock(&(thread->start_mutex));
+  }
+
+  /*  */
+  devout->flags |= (AGS_DEVOUT_BUFFER3 |
+		    AGS_DEVOUT_PLAY);
+
+  /*  */
+  devout_thread->error = NULL;
+
+  if((AGS_DEVOUT_ALSA & (devout->flags)) != 0){
+    if(devout->out.alsa.handle == NULL){
+      ags_devout_alsa_init(devout,
+			   devout_thread->error);
+      
+      devout->flags &= (~AGS_DEVOUT_START_PLAY);      
+      g_message("ags_devout_alsa_play\0");
+    }
+  }
+
+
+  if(devout_thread->error != NULL){
+    AgsAudioLoop *audio_loop;
+
+    /* preserve AgsAudioLoop from playing */
+    //TODO:JK: implement me
+
+    return;
+  }
+
+  AGS_THREAD_CLASS(ags_devout_thread_parent_class)->start(thread);
 
   memset(devout->buffer[0], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
   memset(devout->buffer[1], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
   memset(devout->buffer[2], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
   memset(devout->buffer[3], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
-
-  devout->flags |= (AGS_DEVOUT_BUFFER0 |
-		    AGS_DEVOUT_PLAY);
 }
 
 void
@@ -164,14 +199,23 @@ ags_devout_thread_run(AgsThread *thread)
 {
   AgsDevout *devout;
   AgsDevoutThread *devout_thread;
+  GError *error;
 
-  AGS_THREAD_CLASS(ags_devout_thread_parent_class)->run(thread);
+  //  AGS_THREAD_CLASS(ags_devout_thread_parent_class)->run(thread);
 
   devout_thread = AGS_DEVOUT_THREAD(thread);
 
-  devout = AGS_DEVOUT(devout_thread->devout);
+  devout = AGS_DEVOUT(thread->devout);
 
-  ags_devout_run(devout);
+  //  g_message("play\0");
+
+  error = NULL;
+  ags_devout_alsa_play(devout,
+		       &error);
+
+  if(error != NULL){
+    //TODO:JK: implement me
+  }
 }
 
 void
@@ -183,19 +227,28 @@ ags_devout_thread_stop(AgsThread *thread)
 
   devout_thread = AGS_DEVOUT_THREAD(thread);
 
-  devout = AGS_DEVOUT(devout_thread->devout);
+  devout = AGS_DEVOUT(thread->devout);
   audio_loop = devout->audio_loop;
 
   if((AGS_AUDIO_LOOP_PLAY_RECALL & (devout->flags)) != 0 ||
      (AGS_AUDIO_LOOP_PLAY_CHANNEL & (devout->flags)) != 0 ||
      (AGS_AUDIO_LOOP_PLAY_AUDIO & (devout->flags)) != 0){
-    g_message("ags_devout_stop:  still playing\n\0");
+    g_message("ags_devout_thread_stop:  still playing\n\0");
     return;
   }
 
-  ags_devout_stop(devout);
+  if((AGS_DEVOUT_START_PLAY & (devout->flags)) != 0){
+    g_message("ags_devout_thread_stop:  just starting\n\0");
+    return;
+  }
 
   AGS_THREAD_CLASS(ags_devout_thread_parent_class)->stop(thread);
+
+  devout->flags &= ~(AGS_DEVOUT_PLAY);
+
+  if((AGS_DEVOUT_ALSA & (devout->flags)) != 0){
+    ags_devout_alsa_free(devout);
+  }
 }
 
 AgsDevoutThread*
@@ -204,9 +257,9 @@ ags_devout_thread_new(GObject *devout)
   AgsDevoutThread *devout_thread;
 
   devout_thread = (AgsDevoutThread *) g_object_new(AGS_TYPE_DEVOUT_THREAD,
+						   "devout\0", devout,
 						   NULL);
 
-  devout_thread->devout = devout;
 
   return(devout_thread);
 }

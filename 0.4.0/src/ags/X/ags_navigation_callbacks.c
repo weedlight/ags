@@ -137,11 +137,11 @@ ags_navigation_play_callback(GtkWidget *widget,
 
       /* create init task */
       init_audio = ags_init_audio_new(machine->audio,
-				      FALSE, TRUE, FALSE);
+				      FALSE, TRUE, TRUE);
       list = g_list_prepend(list, init_audio);
     
       /* create append task */
-      append_audio = ags_append_audio_new(AGS_DEVOUT(machine->audio->devout),
+      append_audio = ags_append_audio_new(AGS_DEVOUT(machine->audio->devout)->audio_loop,
 					  machine->audio->devout_play);
       
       list = g_list_prepend(list, append_audio);

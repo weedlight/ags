@@ -19,7 +19,7 @@
 #include <ags/X/ags_window.h>
 #include <ags/X/ags_window_callbacks.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
 
 #include <stdlib.h>
 
@@ -59,8 +59,8 @@ ags_window_get_type()
     };
 
     ags_type_window = g_type_register_static(GTK_TYPE_WINDOW,
-					      "AgsWindow\0", &ags_window_info,
-					      0);
+					     "AgsWindow\0", &ags_window_info,
+					     0);
     
     g_type_add_interface_static(ags_type_window,
 				AGS_TYPE_CONNECTABLE,
@@ -103,7 +103,8 @@ ags_window_init(AgsWindow *window)
   GtkVBox *vbox;
   GtkWidget *scrolled_window;
 
-  window->devout = ags_devout_new();
+  window->main = NULL;
+  window->devout = ags_devout_new(NULL);
 
   window->name = g_strdup("unnamed\0");
 
@@ -210,11 +211,14 @@ ags_window_delete_event(GtkWidget *widget, GdkEventAny *event)
 }
 
 AgsWindow*
-ags_window_new()
+ags_window_new(GObject *main)
 {
   AgsWindow *window;
 
   window = (AgsWindow *) g_object_new(AGS_TYPE_WINDOW, NULL);
+
+  window->main = main;
+  window->devout->main = main;
 
   return(window);
 }

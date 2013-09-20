@@ -21,6 +21,8 @@
 #include <ags/X/ags_machine.h>
 #include <ags/X/ags_machine_callbacks.h>
 
+#include <ags/main.h>
+
 #include <ags/X/ags_window.h>
 #include <ags/X/ags_pad.h>
 #include <ags/X/ags_navigation.h>
@@ -32,6 +34,7 @@
 #include <ags/audio/ags_audio_signal.h>
 #include <ags/audio/ags_pattern.h>
 #include <ags/audio/ags_recall.h>
+#include <ags/audio/ags_recall_container.h>
 
 #include <ags/audio/task/ags_init_audio.h>
 #include <ags/audio/task/ags_append_audio.h>
@@ -39,13 +42,13 @@
 #include <ags/audio/task/ags_link_channel.h>
 #include <ags/audio/task/ags_start_devout.h>
 #include <ags/audio/task/ags_toggle_pattern_bit.h>
+#include <ags/audio/task/ags_toggle_led.h>
 
 #include <ags/audio/task/recall/ags_apply_bpm.h>
 #include <ags/audio/task/recall/ags_apply_tact.h>
 #include <ags/audio/task/recall/ags_apply_sequencer_length.h>
 
 #include <ags/audio/recall/ags_delay_audio.h>
-#include <ags/audio/recall/ags_delay_audio_run.h>
 #include <ags/audio/recall/ags_count_beats_audio.h>
 #include <ags/audio/recall/ags_count_beats_audio_run.h>
 #include <ags/audio/recall/ags_copy_pattern_audio.h>
@@ -65,6 +68,8 @@
 
 extern const char *AGS_DRUM_INDEX;
 
+void ags_drum_start_devout_failure(AgsTask *task, GError *error);
+
 void
 ags_drum_parent_set_callback(GtkWidget *widget, GtkObject *old_parent, AgsDrum *drum)
 {
@@ -80,6 +85,7 @@ ags_drum_parent_set_callback(GtkWidget *widget, GtkObject *old_parent, AgsDrum *
     return;
 
   window = AGS_WINDOW(gtk_widget_get_ancestor((GtkWidget *) drum, AGS_TYPE_WINDOW));
+
   audio = drum->machine.audio;
   audio->devout = (GObject *) window->devout;
 
@@ -87,6 +93,51 @@ ags_drum_parent_set_callback(GtkWidget *widget, GtkObject *old_parent, AgsDrum *
   window->counter->drum++;
 
   devout = AGS_DEVOUT(audio->devout);
+
+  /* AgsDevout */
+  /* play */
+  g_object_set(G_OBJECT(drum->play_delay_audio),
+	       "devout\0", devout,
+	       NULL);
+  g_object_set(G_OBJECT(drum->play_delay_audio_run),
+	       "devout\0", devout,
+	       NULL);
+
+  g_object_set(G_OBJECT(drum->play_count_beats_audio),
+	       "devout\0", devout,
+	       NULL);
+  g_object_set(G_OBJECT(drum->play_count_beats_audio_run),
+	       "devout\0", devout,
+	       NULL);
+
+  g_object_set(G_OBJECT(drum->play_copy_pattern_audio),
+	       "devout\0", devout,
+	       NULL);
+  g_object_set(G_OBJECT(drum->play_copy_pattern_audio_run),
+	       "devout\0", devout,
+	       NULL);
+
+  /* recall */
+  g_object_set(G_OBJECT(drum->recall_delay_audio),
+	       "devout\0", devout,
+	       NULL);
+  g_object_set(G_OBJECT(drum->recall_delay_audio_run),
+	       "devout\0", devout,
+	       NULL);
+
+  g_object_set(G_OBJECT(drum->recall_count_beats_audio),
+	       "devout\0", devout,
+	       NULL);
+  g_object_set(G_OBJECT(drum->recall_count_beats_audio_run),
+	       "devout\0", devout,
+	       NULL);
+
+  g_object_set(G_OBJECT(drum->recall_copy_pattern_audio),
+	       "devout\0", devout,
+	       NULL);
+  g_object_set(G_OBJECT(drum->recall_copy_pattern_audio_run),
+	       "devout\0", devout,
+	       NULL);
 
   /* bpm */
   bpm = window->navigation->bpm->adjustment->value;
@@ -106,9 +157,9 @@ ags_drum_parent_set_callback(GtkWidget *widget, GtkObject *old_parent, AgsDrum *
   tact = exp2(4.0 - (double) gtk_option_menu_get_history((GtkOptionMenu *) drum->tact));
 
   apply_tact = ags_apply_tact_new(G_OBJECT(AGS_MACHINE(drum)->audio),
-				  tact);
+  				  tact);
   ags_task_thread_append_task(AGS_DEVOUT(window->devout)->task_thread,
-			 AGS_TASK(apply_tact));
+  			      AGS_TASK(apply_tact));
 
   /* length */
   length = GTK_SPIN_BUTTON(drum->length_spin)->adjustment->value;
@@ -117,6 +168,44 @@ ags_drum_parent_set_callback(GtkWidget *widget, GtkObject *old_parent, AgsDrum *
 							  length);
   ags_task_thread_append_task(AGS_DEVOUT(window->devout)->task_thread,
 			      AGS_TASK(apply_sequencer_length));
+
+}
+
+void
+ags_drum_sequencer_count_callback(AgsDelayAudioRun *delay_audio_run, guint nth_run,
+				  guint attack,
+				  AgsDrum *drum)
+{
+  AgsWindow *window;
+  AgsRecallContainer *recall_container;
+  AgsCountBeatsAudioRun *count_beats_audio_run;
+  AgsToggleLed *toggle_led;
+  GList *list;
+  guint counter, active_led;
+  
+  window = AGS_WINDOW(gtk_widget_get_ancestor((GtkWidget *) drum, AGS_TYPE_WINDOW));
+
+  list = AGS_RECALL_CONTAINER(AGS_RECALL(drum->recall_count_beats_audio_run)->container)->recall_audio_run;
+  list = ags_recall_find_group_id(list,
+				  AGS_RECALL(delay_audio_run)->recall_id->group_id);
+
+  count_beats_audio_run = AGS_COUNT_BEATS_AUDIO_RUN(list->data);
+  counter = count_beats_audio_run->sequencer_counter;
+
+  drum->active_led = counter;
+
+  if(drum->active_led == 0){
+    active_led = AGS_COUNT_BEATS_AUDIO(AGS_RECALL_AUDIO_RUN(count_beats_audio_run)->recall_audio)->sequencer_loop_end - 1;
+  }else{
+    active_led = drum->active_led - 1;
+  }
+
+  toggle_led = ags_toggle_led_new(gtk_container_get_children(GTK_CONTAINER(drum->led)),
+				  drum->active_led,
+				  active_led);
+
+  ags_task_thread_append_task(AGS_DEVOUT(window->devout)->task_thread,
+			      AGS_TASK(toggle_led));
 }
 
 void
@@ -242,6 +331,25 @@ ags_drum_run_callback(GtkWidget *toggle_button, AgsDrum *drum)
       AGS_DEVOUT_PLAY(AGS_MACHINE(drum)->audio->devout_play)->flags &= (~AGS_DEVOUT_PLAY_DONE);
     }
   }
+}
+
+void
+ags_drum_start_devout_failure(AgsTask *task, GError *error)
+{
+  AgsWindow *window;
+  GtkMessageDialog *dialog;
+  AgsAudioLoop *audio_loop;
+
+  /* show error message */
+  window = AGS_MAIN(AGS_START_DEVOUT(task)->devout->main)->window;
+  
+  dialog = (GtkMessageDialog *) gtk_message_dialog_new(GTK_WINDOW(window),
+						       GTK_DIALOG_MODAL,
+						       GTK_MESSAGE_ERROR,
+						       GTK_BUTTONS_CLOSE,
+						       error->message);
+  gtk_dialog_run(GTK_DIALOG(dialog));
+  gtk_widget_destroy(GTK_WIDGET(dialog));
 }
 
 void

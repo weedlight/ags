@@ -41,7 +41,11 @@ struct _AgsTaskThread
 {
   AgsThread thread;
 
-  GObject *devout;
+  pthread_mutex_t read_mutex;
+  pthread_mutex_t launch_mutex;
+
+  GCond cond;
+  GMutex mutex;
 
   guint queued;
   guint pending;

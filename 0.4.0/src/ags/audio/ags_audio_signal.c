@@ -19,7 +19,7 @@
 #include <ags/audio/ags_audio_signal.h>
 
 #include <ags/object/ags_marshal.h>
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
 
 #include <ags/audio/ags_devout.h>
 
@@ -186,6 +186,7 @@ ags_audio_signal_init(AgsAudioSignal *audio_signal)
 
   audio_signal->samplerate = AGS_DEVOUT_DEFAULT_SAMPLERATE;
   audio_signal->buffer_size = AGS_DEVOUT_DEFAULT_BUFFER_SIZE;
+  audio_signal->resolution = AGS_DEVOUT_RESOLUTION_16_BIT;
 
   audio_signal->length = 0;
   audio_signal->last_frame = 0;
@@ -429,10 +430,10 @@ ags_attack_duplicate_from_devout(GObject *gobject)
 
   if((AGS_DEVOUT_ATTACK_FIRST & (devout->flags)) != 0)
     copy = ags_attack_alloc(attack->first_start, attack->first_length,
-			    0, 0);
+			    attack->second_start, attack->second_length);
   else
     copy = ags_attack_alloc(attack->second_start, attack->second_length,
-			    0, 0);
+			    attack->first_start, attack->first_length);
 
   return(copy);
 }
@@ -829,6 +830,11 @@ ags_audio_signal_duplicate_stream(AgsAudioSignal *audio_signal,
     while(template_stream != NULL){
       if(k == devout->buffer_size){
 	k = 0;
+	
+	if(stream->next == NULL && template_k != devout->buffer_size){
+	  ags_audio_signal_add_stream(audio_signal);
+	}
+
 	stream = stream->next;
       }
 
@@ -1076,6 +1082,576 @@ ags_audio_signal_scale(AgsAudioSignal *audio_signal,
 		       AgsAudioSignal *template,
 		       guint length)
 {
+  GList *source, *destination, *stream_template;
+  gpointer data;
+  double scale_factor, morph_factor;
+  guint offset;
+  double step;
+  guint i, j, j_stop;
+  gboolean expand;
+
+  auto void ags_audio_signal_scale_copy_8_bit(GList *source, GList *destination,
+					      guint soffset, guint doffset,
+					      guint dresolution);
+  auto void ags_audio_signal_scale_copy_16_bit(GList *source, GList *destination,
+					       guint soffset, guint doffset,
+					       guint dresolution);
+  auto void ags_audio_signal_scale_copy_24_bit(GList *source, GList *destination,
+					       guint soffset, guint doffset,
+					       guint dresolution);
+  auto void ags_audio_signal_scale_copy_32_bit(GList *source, GList *destination,
+					       guint soffset, guint doffset,
+					       guint dresolution);
+  auto void ags_audio_signal_scale_copy_64_bit(GList *source, GList *destination,
+					       guint soffset, guint doffset,
+					       guint dresolution);
+
+  void ags_audio_signal_scale_copy_8_bit(GList *source, GList *destination,
+					 guint soffset, guint doffset,
+					 guint dresolution){
+    gint8 *sbuffer;
+
+    sbuffer = (gint8 *) source->data;
+
+    switch(dresolution){
+    case AGS_DEVOUT_RESOLUTION_8_BIT:
+      {
+	gint8 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint8 *) destination->data;
+
+	scale = 1.0;
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_16_BIT:
+      {
+	gint16 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint16 *) destination->data;
+
+	scale = exp2(8.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_24_BIT:
+      {
+	unsigned char *dbuffer;
+	gint16 value;
+	gdouble scale;
+	gint16 mask;
+
+	dbuffer = (unsigned char *) destination->data;
+
+	scale = exp2(16.0);
+
+	value = scale * sbuffer[soffset];
+	mask = 0xff;
+
+	dbuffer[doffset * 3] = mask & value;
+	dbuffer[doffset * 3 + 1] = (mask << 8) & value;
+	
+	if(sbuffer[soffset] < 0){
+	  dbuffer[doffset * 3 + 1] &= (~0x80);
+	  dbuffer[doffset * 3 + 2] = 0x80;
+	}else{
+	  dbuffer[doffset * 3 + 2] = 0;
+	}
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_32_BIT:
+      {
+	gint32 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint32 *) destination->data;
+
+	scale = exp2(24.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_64_BIT:
+      {
+	gint64 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint64 *) destination->data;
+
+	scale = exp2(56.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    }
+  }
+  void ags_audio_signal_scale_copy_16_bit(GList *source, GList *destination,
+					  guint soffset, guint doffset,
+					  guint dresolution){
+    gint16 *sbuffer;
+
+    sbuffer = (gint16 *) source->data;
+
+    switch(dresolution){
+    case AGS_DEVOUT_RESOLUTION_8_BIT:
+      {
+	gint8 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint8 *) destination->data;
+
+	scale = exp2(1.0 / 8.0);
+
+	dbuffer[doffset] = (gint8) floor(scale * sbuffer[soffset]);
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_16_BIT:
+      {
+	gint16 *dbuffer;
+
+	dbuffer = (gint16 *) destination->data;
+
+	dbuffer[doffset] = sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_24_BIT:
+      {
+	unsigned char *dbuffer;
+	gint32 value;
+	gdouble scale;
+	gint32 mask;
+
+	dbuffer = (unsigned char *) destination->data;
+
+	scale = exp2(8.0);
+	mask = 0xff;
+
+	value = scale * sbuffer[soffset];
+      
+	dbuffer[doffset * 3] = mask & value;
+	dbuffer[doffset * 3 + 1] = (mask << 8) & value;
+	dbuffer[doffset * 3 + 2] = (mask << 16) & value;
+	
+	if(sbuffer[soffset] < 0){
+	  dbuffer[doffset * 3 + 2] |= 0x80;
+	}
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_32_BIT:
+      {
+	gint32 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint32 *) destination->data;
+
+	scale = exp2(16.0);
+	
+	dbuffer[doffset] = sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_64_BIT:
+      {
+	gint64 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint64 *) destination->data;
+
+	scale = exp2(48.0);
+	
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    }
+  }
+  void ags_audio_signal_scale_copy_24_bit(GList *source, GList *destination,
+					  guint soffset, guint doffset,
+					  guint dresolution){
+    unsigned char *sbuffer;
+
+    sbuffer = (char *) source->data;
+
+    switch(dresolution){
+    case AGS_DEVOUT_RESOLUTION_8_BIT:
+      {
+	gint8 *dbuffer;
+	gdouble scale;
+	gint16 *mask;
+	
+	dbuffer = (gint8 *) destination->data;
+
+	scale = exp2(1.0 / 16.0);
+
+	dbuffer[doffset] = (gint8) round(scale * (double) sbuffer[soffset]);
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_16_BIT:
+      {
+	gint16 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint16 *) destination->data;
+
+	scale = exp2(1.0 / 8.0);
+
+	dbuffer[doffset] = (gint16) round(scale * (double) sbuffer[soffset]);
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_24_BIT:
+      {
+	unsigned char *dbuffer;
+	gint16 mask;
+
+	dbuffer = (unsigned char *) destination->data;
+
+	dbuffer[doffset * 3] = sbuffer[soffset * 3];
+	dbuffer[doffset * 3 + 1] = sbuffer[soffset * 3 + 1];
+	dbuffer[doffset * 3 + 2] = sbuffer[soffset * 3 + 2];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_32_BIT:
+      {
+	gint32 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint32 *) destination->data;
+
+	scale = exp2(8.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_64_BIT:
+      {
+	gint64 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint64 *) destination->data;
+
+	scale = exp2(40.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    }
+  }
+  void ags_audio_signal_scale_copy_32_bit(GList *source, GList *destination,
+					  guint soffset, guint doffset,
+					  guint dresolution){
+    gint32 *sbuffer;
+
+    sbuffer = (gint32 *) source->data;
+
+    switch(dresolution){
+    case AGS_DEVOUT_RESOLUTION_8_BIT:
+      {
+	gint8 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint8 *) destination->data;
+
+	scale = exp2(1.0 / 24.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_16_BIT:
+      {
+	gint16 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint16 *) destination->data;
+
+	scale = exp2(1.0 / 16.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_24_BIT:
+      {
+	unsigned char *dbuffer;
+	gint32 value;
+	gdouble scale;
+	gint32 mask;
+
+	dbuffer = (unsigned char *) destination->data;
+
+	scale = exp2(1.0 / 8.0);
+	mask = 0xff;
+
+	value = scale * sbuffer[soffset];
+      
+	dbuffer[doffset * 3] = mask & value;
+	dbuffer[doffset * 3 + 1] = (mask << 8) & value;
+	dbuffer[doffset * 3 + 2] = (mask << 16) & value;
+	
+	if(sbuffer[soffset] < 0){
+	  dbuffer[doffset * 3 + 2] |= 0x80;
+	}
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_32_BIT:
+      {
+	gint32 *dbuffer;
+
+	dbuffer = (gint32 *) destination->data;
+
+	dbuffer[doffset] = sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_64_BIT:
+      {
+	gint64 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint64 *) destination->data;
+
+	scale = exp2(32.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    }
+  }
+  void ags_audio_signal_scale_copy_64_bit(GList *source, GList *destination,
+					  guint soffset, guint doffset,
+					  guint dresolution){
+    gint64 *sbuffer;
+
+    sbuffer = (gint64 *) source->data;
+
+    switch(dresolution){
+    case AGS_DEVOUT_RESOLUTION_8_BIT:
+      {
+	gint8 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint8 *) destination->data;
+
+	scale = exp2(1 / 56.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_16_BIT:
+      {
+	gint16 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint16 *) destination->data;
+
+	scale = exp2(1 / 48.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_24_BIT:
+      {
+	unsigned char *dbuffer;
+	gint32 value;
+	gdouble scale;
+	gint32 mask;
+
+	dbuffer = (unsigned char *) destination->data;
+
+	scale = exp2(1.0 / 40.0);
+	mask = 0xff;
+
+	value = scale * sbuffer[soffset];
+      
+	dbuffer[doffset * 3] = mask & value;
+	dbuffer[doffset * 3 + 1] = (mask << 8) & value;
+	dbuffer[doffset * 3 + 2] = (mask << 16) & value;
+	
+	if(sbuffer[soffset] < 0){
+	  dbuffer[doffset * 3 + 2] |= 0x80;
+	}
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_32_BIT:
+      {
+	gint32 *dbuffer;
+	gdouble scale;
+
+	dbuffer = (gint32 *) destination->data;
+
+	scale = exp2(1 / 32.0);
+
+	dbuffer[doffset] = scale * sbuffer[soffset];
+      }
+      break;
+    case AGS_DEVOUT_RESOLUTION_64_BIT:
+      {
+	gint64 *dbuffer;
+
+	dbuffer = (gint64 *) destination->data;
+
+	dbuffer[doffset] = sbuffer[soffset];
+      }
+      break;
+    }
+  }
+
+  source = template->stream_beginning;
+
+  if(template->samplerate < audio_signal->samplerate){
+    expand = TRUE;
+  }else{
+    expand = FALSE;
+  }
+
+  scale_factor = 1.0 / template->length * length;
+  morph_factor = 1.0 / template->resolution * audio_signal->resolution;
+
+  /* prepare destination */
+  ags_audio_signal_stream_resize(audio_signal, length);
+
+  /* create audio data */
+  j_stop = smallest_common_factor(audio_signal->resolution, template->resolution);
+
+  stream_template = NULL;
+
+  offset = 0;
+  step = 0.0;
+
+  for(i = 0; i < template->length; i++){
+    for(; j < j_stop; j++){
+
+      if(offset == audio_signal->buffer_size && step >= morph_factor){
+	break;
+      }
+
+      if(offset == 0){
+	if(expand){
+	  data = (gpointer) malloc(sizeof(audio_signal->buffer_size * morph_factor));
+	}else{
+	  data = (gpointer) malloc(sizeof(audio_signal->buffer_size / morph_factor));
+	}
+
+	stream_template = g_list_prepend(stream_template,
+					 data);
+
+	destination = stream_template;
+      }
+
+      switch(template->resolution){
+      case AGS_DEVOUT_RESOLUTION_8_BIT:
+	{
+	  ags_audio_signal_scale_copy_8_bit(destination, source,
+					    j, offset,
+					    audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_16_BIT:
+	{
+	  ags_audio_signal_scale_copy_16_bit(destination, source,
+					     j, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_24_BIT:
+	{
+	  ags_audio_signal_scale_copy_24_bit(destination, source,
+					     j, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_32_BIT:
+	{
+	  ags_audio_signal_scale_copy_32_bit(destination, source,
+					     j, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_64_BIT:
+	{
+	  ags_audio_signal_scale_copy_64_bit(destination, source,
+					     j, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      }
+
+      step += (1 / morph_factor);
+
+      if(step >= morph_factor){
+	step = 0.0;
+	offset++;
+      }      
+    }
+
+
+    if(j == j_stop){
+      j = 0;
+    }
+
+    if(offset == template->buffer_size && step == 0.0){
+      offset = 0;
+      source = source->next;
+    }
+  }
+
+  stream_template = g_list_reverse(stream_template);
+
+  /* morph */
+  //TODO:JK: implement me
+
+  /* scale */
+  source = stream_template;
+  destination = audio_signal->stream_beginning;
+
+  offset = 0;
+
+  while(destination != NULL){
+    for(i = 0; i < audio_signal->buffer_size; i++){
+
+      switch(audio_signal->resolution){
+      case AGS_DEVOUT_RESOLUTION_8_BIT:
+	{
+	  ags_audio_signal_scale_copy_8_bit(destination, source,
+					    i, offset,
+					    audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_16_BIT:
+	{
+	  ags_audio_signal_scale_copy_16_bit(destination, source,
+					     i, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_24_BIT:
+	{
+	  ags_audio_signal_scale_copy_24_bit(destination, source,
+					     i, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_32_BIT:
+	{
+	  ags_audio_signal_scale_copy_32_bit(destination, source,
+					     i, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      case AGS_DEVOUT_RESOLUTION_64_BIT:
+	{
+	  ags_audio_signal_scale_copy_64_bit(destination, source,
+					     i, offset,
+					     audio_signal->resolution);
+	}
+	break;
+      }
+
+      offset = (guint) floor(morph_factor * (double) i);
+    }
+
+    destination = destination->next;
+    source = source->next;
+  }
 }
 
 AgsAudioSignal*

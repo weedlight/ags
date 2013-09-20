@@ -18,15 +18,15 @@
 
 #include <ags/audio/recall/ags_play_notation.h>
 
-#include <ags/object/ags_connectable.h>
-#include <ags/object/ags_run_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
+#include <ags/object/ags_dynamic_connectable.h>
 
 #include <ags/audio/ags_recall_id.h>
 #include <ags/audio/ags_recall_container.h>
 
 void ags_play_notation_class_init(AgsPlayNotationClass *play_notation);
 void ags_play_notation_connectable_interface_init(AgsConnectableInterface *connectable);
-void ags_play_notation_run_connectable_interface_init(AgsRunConnectableInterface *run_connectable);
+void ags_play_notation_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable);
 void ags_play_notation_init(AgsPlayNotation *play_notation);
 void ags_play_notation_set_property(GObject *gobject,
 				    guint prop_id,
@@ -39,8 +39,8 @@ void ags_play_notation_get_property(GObject *gobject,
 void ags_play_notation_finalize(GObject *gobject);
 void ags_play_notation_connect(AgsConnectable *connectable);
 void ags_play_notation_disconnect(AgsConnectable *connectable);
-void ags_play_notation_run_connect(AgsRunConnectable *run_connectable);
-void ags_play_notation_run_disconnect(AgsRunConnectable *run_connectable);
+void ags_play_notation_connect_dynamic(AgsDynamicConnectable *dynamic_connectable);
+void ags_play_notation_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable);
 
 void ags_play_notation_resolve_dependencies(AgsRecall *recall);
 AgsRecall* ags_play_notation_duplicate(AgsRecall *recall,
@@ -48,20 +48,20 @@ AgsRecall* ags_play_notation_duplicate(AgsRecall *recall,
 				       guint *n_params, GParameter *parameter);
 
 void ags_play_notation_play_note_done(AgsRecall *recall, AgsPlayNotation *play_notation);
-void ags_play_notation_delay_tic_alloc_input_callback(AgsDelayAudioRun *delay,
-						      guint nth_run, guint attack,
-						      AgsPlayNotation *play_notation);
+void ags_play_notation_alloc_input_callback(AgsDelayAudioRun *delay,
+					    guint nth_run, guint attack,
+					    AgsPlayNotation *play_notation);
 
 enum{
   PROP_0,
-  PROP_DEVOUT,
+  PROP_NOTATION,
   PROP_DELAY_AUDIO_RUN,
   PROP_COUNT_BEATS_AUDIO_RUN,
 };
 
 static gpointer ags_play_notation_parent_class = NULL;
 static AgsConnectableInterface* ags_play_notation_parent_connectable_interface;
-static AgsRunConnectableInterface *ags_play_notation_parent_run_connectable_interface;
+static AgsDynamicConnectableInterface *ags_play_notation_parent_dynamic_connectable_interface;
 
 GType
 ags_play_notation_get_type()
@@ -87,8 +87,8 @@ ags_play_notation_get_type()
       NULL, /* interface_data */
     };
 
-    static const GInterfaceInfo ags_run_connectable_interface_info = {
-      (GInterfaceInitFunc) ags_play_notation_run_connectable_interface_init,
+    static const GInterfaceInfo ags_dynamic_connectable_interface_info = {
+      (GInterfaceInitFunc) ags_play_notation_dynamic_connectable_interface_init,
       NULL, /* interface_finalize */
       NULL, /* interface_data */
     };
@@ -103,8 +103,8 @@ ags_play_notation_get_type()
 				&ags_connectable_interface_info);
 
     g_type_add_interface_static(ags_type_play_notation,
-				AGS_TYPE_RUN_CONNECTABLE,
-				&ags_run_connectable_interface_info);
+				AGS_TYPE_DYNAMIC_CONNECTABLE,
+				&ags_dynamic_connectable_interface_info);
   }
 
   return (ags_type_play_notation);
@@ -128,18 +128,18 @@ ags_play_notation_class_init(AgsPlayNotationClass *play_notation)
   gobject->finalize = ags_play_notation_finalize;
 
   /* properties */
-  param_spec = g_param_spec_object("devout\0",
-				   "assigned AgsDevout\0",
-				   "the AgsDevout\0",
-				   AGS_TYPE_DEVOUT,
-				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  param_spec = g_param_spec_object("notation\0",
+				   "assigned notation\0",
+				   "the assigned AgsNotation\0",
+				   AGS_TYPE_NOTATION,
+				   G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
-				  PROP_DEVOUT,
+				  PROP_NOTATION,
 				  param_spec);
 
   param_spec = g_param_spec_object("delay_audio_run\0",
 				   "assigned AgsDelayAudioRun\0",
-				   "the AgsDelayAudioRun which emits tic_alloc_input signal\0",
+				   "the AgsDelayAudioRun which emits notation_alloc_input signal\0",
 				   AGS_TYPE_DELAY_AUDIO_RUN,
 				   G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
@@ -172,19 +172,17 @@ ags_play_notation_connectable_interface_init(AgsConnectableInterface *connectabl
 }
 
 void
-ags_play_notation_run_connectable_interface_init(AgsRunConnectableInterface *run_connectable)
+ags_play_notation_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable)
 {
-  ags_play_notation_parent_run_connectable_interface = g_type_interface_peek_parent(run_connectable);
+  ags_play_notation_parent_dynamic_connectable_interface = g_type_interface_peek_parent(dynamic_connectable);
 
-  run_connectable->connect = ags_play_notation_run_connect;
-  run_connectable->disconnect = ags_play_notation_run_disconnect;
+  dynamic_connectable->connect_dynamic = ags_play_notation_connect_dynamic;
+  dynamic_connectable->disconnect_dynamic = ags_play_notation_disconnect_dynamic;
 }
 
 void
 ags_play_notation_init(AgsPlayNotation *play_notation)
 {
-  play_notation->devout = NULL;
-  
   play_notation->notation = NULL;
 
   play_notation->delay_audio_run = NULL;
@@ -203,25 +201,18 @@ ags_play_notation_set_property(GObject *gobject,
   play_notation = AGS_PLAY_NOTATION(gobject);
 
   switch(prop_id){
-  case PROP_DEVOUT:
+  case PROP_NOTATION:
     {
-      AgsDevout *devout;
+      AgsNotation *notation;
 
-      devout = g_value_get_object(value);
+      notation = g_value_get_object(value);
 
-      if(devout == play_notation->devout){
+      if(g_list_find(play_notation->notation, notation) != NULL || notation == NULL){
 	return;
       }
 
-      if(play_notation->devout != NULL){
-	g_object_unref(G_OBJECT(play_notation->devout));
-      }
-
-      if(devout != NULL){
-	g_object_ref(devout);
-      }
-
-      play_notation->devout = devout;
+      g_object_ref(notation);
+      play_notation->notation = g_list_append(play_notation->notation, notation);
     }
     break;
   case PROP_DELAY_AUDIO_RUN:
@@ -249,7 +240,7 @@ ags_play_notation_set_property(GObject *gobject,
 	}else{
 	  if((AGS_RECALL_RUN_INITIALIZED & (AGS_RECALL(play_notation)->flags)) != 0){
 	    g_signal_handler_disconnect(G_OBJECT(play_notation),
-					play_notation->tic_alloc_input_handler);
+					play_notation->notation_alloc_input_handler);
 	  }
 	}
 
@@ -264,9 +255,9 @@ ags_play_notation_set_property(GObject *gobject,
 				    ags_recall_dependency_new((GObject *) delay_audio_run));
 	}else{
 	  if((AGS_RECALL_RUN_INITIALIZED & (AGS_RECALL(play_notation)->flags)) != 0){
-	    play_notation->tic_alloc_input_handler =
-	      g_signal_connect(G_OBJECT(delay_audio_run), "tic_alloc_input\0",
-			       G_CALLBACK(ags_play_notation_delay_tic_alloc_input_callback), play_notation);
+	    play_notation->notation_alloc_input_handler =
+	      g_signal_connect(G_OBJECT(delay_audio_run), "notation_alloc_input\0",
+			       G_CALLBACK(ags_play_notation_alloc_input_callback), play_notation);
 	  }
 	}
       }
@@ -330,11 +321,6 @@ ags_play_notation_get_property(GObject *gobject,
   play_notation = AGS_PLAY_NOTATION(gobject);
 
   switch(prop_id){
-  case PROP_DEVOUT:
-    {
-      g_value_set_object(value, G_OBJECT(play_notation->devout));
-    }
-    break;
   case PROP_DELAY_AUDIO_RUN:
     {
       g_value_set_object(value, G_OBJECT(play_notation->delay_audio_run));
@@ -358,12 +344,20 @@ ags_play_notation_finalize(GObject *gobject)
 
   play_notation = AGS_PLAY_NOTATION(gobject);
 
-  if(play_notation->devout != NULL){
-    g_object_unref(G_OBJECT(play_notation->devout));
-  }
-
   if(play_notation->notation != NULL){
-    g_object_unref(G_OBJECT(play_notation->notation));
+    GList *current;
+
+    current = play_notation->notation;
+
+    while(current != NULL){
+      g_object_unref(G_OBJECT(current->data));
+
+      current = current->next;
+    }
+
+    current = play_notation->notation;
+    play_notation->notation = NULL;
+    g_list_free(current);
   }
 
   if(play_notation->delay_audio_run != NULL){
@@ -380,46 +374,56 @@ ags_play_notation_finalize(GObject *gobject)
 void
 ags_play_notation_connect(AgsConnectable *connectable)
 {
+  AgsPlayNotation *play_notation;
+
   /* call parent */
   ags_play_notation_parent_connectable_interface->connect(connectable);
+
+  play_notation = AGS_PLAY_NOTATION(connectable);
+
+  if(play_notation->delay_audio_run != NULL){
+    play_notation->notation_alloc_input_handler = g_signal_connect_after(G_OBJECT(play_notation->delay_audio_run), "notation_alloc_input\0",
+									 G_CALLBACK(ags_play_notation_alloc_input_callback), play_notation);
+  }
 }
 
 void
 ags_play_notation_disconnect(AgsConnectable *connectable)
 {
+  AgsPlayNotation *play_notation;
+
   /* call parent */
   ags_play_notation_parent_connectable_interface->disconnect(connectable);
-}
 
-void
-ags_play_notation_run_connect(AgsRunConnectable *run_connectable)
-{
-  AgsPlayNotation *play_notation;
-
-  /* call parent */
-  ags_play_notation_parent_run_connectable_interface->connect(run_connectable);
-
-  play_notation = AGS_PLAY_NOTATION(run_connectable);
+  play_notation = AGS_PLAY_NOTATION(connectable);
 
   if(play_notation->delay_audio_run != NULL){
-    play_notation->tic_alloc_input_handler = g_signal_connect_after(G_OBJECT(play_notation->delay_audio_run), "tic_alloc_input\0",
-								    G_CALLBACK(ags_play_notation_delay_tic_alloc_input_callback), play_notation);
+    g_signal_handler_disconnect(G_OBJECT(play_notation->delay_audio_run), play_notation->notation_alloc_input_handler);
   }
 }
 
 void
-ags_play_notation_run_disconnect(AgsRunConnectable *run_connectable)
+ags_play_notation_connect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 {
   AgsPlayNotation *play_notation;
 
+  play_notation = AGS_PLAY_NOTATION(dynamic_connectable);
+
   /* call parent */
-  ags_play_notation_parent_run_connectable_interface->disconnect(run_connectable);
+  ags_play_notation_parent_dynamic_connectable_interface->connect_dynamic(dynamic_connectable);
 
-  play_notation = AGS_PLAY_NOTATION(run_connectable);
+  /* connect */
+  play_notation->notation_alloc_input_handler =
+    g_signal_connect(G_OBJECT(play_notation->delay_audio_run), "notation_alloc_input\0",
+		     G_CALLBACK(ags_play_notation_alloc_input_callback), play_notation);
+  
+}
 
-  if(play_notation->delay_audio_run != NULL){
-    g_signal_handler_disconnect(G_OBJECT(play_notation->delay_audio_run), play_notation->tic_alloc_input_handler);
-  }
+void
+ags_play_notation_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable)
+{
+  /* call parent */
+  ags_play_notation_parent_dynamic_connectable_interface->disconnect_dynamic(dynamic_connectable);
 }
 
 void
@@ -473,6 +477,7 @@ ags_play_notation_duplicate(AgsRecall *recall,
 			    guint *n_params, GParameter *parameter)
 {
   AgsPlayNotation *copy, *play_notation;
+  GList *current;
 
   copy = AGS_PLAY_NOTATION(AGS_RECALL_CLASS(ags_play_notation_parent_class)->duplicate(recall,
 										       recall_id,
@@ -480,25 +485,27 @@ ags_play_notation_duplicate(AgsRecall *recall,
 
   play_notation = AGS_PLAY_NOTATION(recall);
 
-  g_object_set(G_OBJECT(play_notation),
-	       "devout\0", play_notation->devout,
-	       NULL);
+  current = play_notation->notation;
 
-  //FIXME:JK: write properties
-  play_notation = AGS_PLAY_NOTATION(recall);
-  copy->notation = play_notation->notation;
+  while(current != NULL){
+    g_object_set(G_OBJECT(copy),
+		 "notation\0", current->data,
+		 NULL);
+
+    current = current->next;
+  }
 
   return((AgsRecall *) copy);
 }
 
 void
-ags_play_notation_delay_tic_alloc_input_callback(AgsDelayAudioRun *delay,
-						 guint nth_run, guint attack,
-						 AgsPlayNotation *play_notation)
+ags_play_notation_alloc_input_callback(AgsDelayAudioRun *delay,
+				       guint nth_run, guint attack,
+				       AgsPlayNotation *play_notation)
 {
   AgsNotation *notation;
   AgsAudio *audio;
-  AgsChannel *selected_channel, *channel;
+  AgsChannel *selected_channel, *channel, *next_pad;
   AgsAudioSignal *audio_signal;
   AgsRunOrder *run_order;
   GList *current_position;
@@ -522,10 +529,15 @@ ags_play_notation_delay_tic_alloc_input_callback(AgsDelayAudioRun *delay,
 					    AGS_RECALL(play_notation)->recall_id->group_id);
   }
 
-  channel = AGS_CHANNEL(g_list_nth(run_order->run_order, nth_run - 1)->data);
-  channel = ags_channel_nth(audio->input, channel->audio_channel);
+  //FIXME:JK: this is wrong
+  channel = ags_channel_nth(audio->output, nth_run - 1);
 
-  notation = AGS_NOTATION(g_list_nth(list, channel->audio_channel)->data);
+  notation = AGS_NOTATION(g_list_nth(audio->notation, channel->audio_channel)->data);
+
+  if((AGS_AUDIO_NOTATION_DEFAULT & (audio->flags)) != 0){
+    channel = ags_channel_nth(audio->input, channel->audio_channel);
+  }
+
   current_position = notation->notes; // start_loop
 
   while(current_position != NULL){

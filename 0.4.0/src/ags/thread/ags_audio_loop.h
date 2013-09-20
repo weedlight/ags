@@ -52,11 +52,13 @@ struct _AgsAudioLoop
 
   guint flags;
 
-  guint tic;
-  guint last_sync;
+  volatile guint tic;
+  volatile guint last_sync;
+
+  GObject *main;
   
   AgsThread *task_thread;
-
+  AgsThread *gui_thread;
   AgsThread *devout_thread;
 
   guint play_recall_ref;

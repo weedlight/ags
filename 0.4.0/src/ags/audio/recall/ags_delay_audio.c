@@ -125,7 +125,7 @@ ags_delay_audio_class_init(AgsDelayAudioClass *delay_audio)
 				 "sequencer delay for timeing\0",
 				 "The sequencer delay whenever a tic occures\0",
 				 0,
-				 256,
+				 AGS_DEVOUT_DEFAULT_BUFFER_SIZE,
 				 0,
 				 G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
@@ -155,11 +155,11 @@ ags_delay_audio_tactable_interface_init(AgsTactableInterface *tactable)
 void
 ags_delay_audio_init(AgsDelayAudio *delay_audio)
 {
-  delay_audio->bpm = 120.0;
-  delay_audio->tact = 1.0 / 4.0;
+  delay_audio->bpm = AGS_DEVOUT_DEFAULT_BPM;
+  delay_audio->tact = exp2(-2.0);
 
-  delay_audio->notation_delay = 44100.0 / 128.0 / 64.0 / (delay_audio->bpm / 60.0);
-  delay_audio->sequencer_delay = delay_audio->notation_delay * (64.0 * delay_audio->tact);
+  delay_audio->notation_delay = (gdouble) AGS_DEVOUT_DEFAULT_SAMPLERATE / (gdouble) AGS_DEVOUT_DEFAULT_BUFFER_SIZE * 60.0 / delay_audio->bpm;
+  delay_audio->sequencer_delay = (gdouble) AGS_DEVOUT_DEFAULT_SAMPLERATE / (gdouble) AGS_DEVOUT_DEFAULT_BUFFER_SIZE * 60.0 / delay_audio->bpm * 64.0 * delay_audio->tact;
 
   delay_audio->sequencer_duration = 16.0;
   delay_audio->notation_duration = 1200.0 * 64.0;
@@ -258,7 +258,7 @@ ags_delay_audio_change_tact(AgsTactable *tactable, gdouble tact)
 
   devout = AGS_DEVOUT(AGS_RECALL(delay_audio)->devout);
 
-  //  delay_audio->notation_delay *= (delay_audio->tact / tact);
+//  delay_audio->notation_delay *= (delay_audio->tact / tact);
   delay_audio->sequencer_delay *= (tact / delay_audio->tact);
 
   delay_audio->tact = tact;

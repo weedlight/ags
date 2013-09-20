@@ -18,7 +18,9 @@
 
 #include <ags/audio/task/ags_append_audio.h>
 
-#include <ags/object/ags_connectable.h>
+#include <ags-lib/object/ags_connectable.h>
+
+#include <ags/main.h>
 
 void ags_append_audio_class_init(AgsAppendAudioClass *append_audio);
 void ags_append_audio_connectable_interface_init(AgsConnectableInterface *connectable);

@@ -1,0 +1,1 @@
+ags-ags_sync.o: src/ags/thread/ags_sync.c
