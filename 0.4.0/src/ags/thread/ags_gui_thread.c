@@ -33,7 +33,11 @@ void ags_gui_thread_finalize(GObject *gobject);
 
 void ags_gui_thread_start(AgsThread *thread);
 void ags_gui_thread_run(AgsThread *thread);
+void ags_gui_thread_suspend(AgsThread *thread);
+void ags_gui_thread_resume(AgsThread *thread);
 void ags_gui_thread_stop(AgsThread *thread);
+
+void ags_gui_thread_suspend_handler(int sig);
 
 static gpointer ags_gui_thread_parent_class = NULL;
 static AgsConnectableInterface *ags_gui_thread_parent_connectable_interface;
@@ -95,6 +99,8 @@ ags_gui_thread_class_init(AgsGuiThreadClass *gui_thread)
 
   thread->start = ags_gui_thread_start;
   thread->run = ags_gui_thread_run;
+  thread->suspend = ags_gui_thread_suspend;
+  thread->resume = ags_gui_thread_resume;
   thread->stop = ags_gui_thread_stop;
 }
 
@@ -114,18 +120,16 @@ ags_gui_thread_init(AgsGuiThread *gui_thread)
 
   thread = AGS_THREAD(gui_thread);
 
-  g_atomic_int_or(&(thread->flags),
-		  AGS_THREAD_TIMELOCK_RUN);
-  thread->timelock.tv_sec = 0;
-  thread->timelock.tv_nsec = floor(NSEC_PER_SEC / (AGS_GUI_THREAD_DEFAULT_JIFFIE + 1) *
-				   ((double) AGS_DEVOUT_DEFAULT_SAMPLERATE / (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE));
+  //  g_atomic_int_or(&(thread->flags),
+  //		  AGS_THREAD_TIMELOCK_RUN);
 
-
-  gui_thread->main_loop = g_main_loop_new(NULL, FALSE);
   g_cond_init(&gui_thread->cond);
   g_mutex_init(&gui_thread->mutex);
 
   gui_thread->frequency = 1.0 / (double) AGS_GUI_THREAD_DEFAULT_JIFFIE;
+  gui_thread->iter = 0;
+  gui_thread->iter_stop = 1;
+  gui_thread->iter_stop_is_delay = TRUE;
 }
 
 void
@@ -166,7 +170,9 @@ ags_gui_thread_start(AgsThread *thread)
   GDK_THREADS_LEAVE();
 
   /*  */
-  AGS_THREAD_CLASS(ags_gui_thread_parent_class)->start(thread);
+  if((AGS_THREAD_SINGLE_LOOP & (thread->flags)) == 0){
+    AGS_THREAD_CLASS(ags_gui_thread_parent_class)->start(thread);
+  }
 }
 
 void
@@ -175,98 +181,138 @@ ags_gui_thread_run(AgsThread *thread)
   AgsAudioLoop *audio_loop;
   AgsGuiThread *gui_thread;
   AgsTaskThread *task_thread;
-  GMainLoop *main_loop;
   GMainContext *main_context;
-  guint i, i_stop;
+  int success;
 
+  auto void ags_gui_thread_do_gtk_iteration();
+
+  void ags_gui_thread_do_gtk_iteration(){
+
+    if(!g_main_context_acquire(main_context)){
+      gboolean got_ownership = FALSE;
+
+      while(!got_ownership){
+	got_ownership = g_main_context_wait(main_context,
+					    &gui_thread->cond,
+					    &gui_thread->mutex);
+      }
+    }
+
+    /*  */
+    success = pthread_mutex_trylock(&(thread->suspend_mutex));
+
+    if(success){
+      g_atomic_int_set(&thread->critical_region,
+		       TRUE);
+    }
+
+    /*  */
+    pthread_mutex_lock(&(task_thread->launch_mutex));
+
+    if(success){
+      /*  */
+      pthread_mutex_unlock(&(thread->suspend_mutex));
+    }else{
+      g_atomic_int_set(&thread->critical_region,
+		       TRUE);
+    }
+
+    /*  */
+    g_main_context_iteration(main_context, FALSE);
+
+    GDK_THREADS_ENTER();
+
+    GDK_THREADS_LEAVE();
+
+    /*  */
+    success = pthread_mutex_trylock(&(thread->suspend_mutex));
+      
+    /*  */
+    pthread_mutex_unlock(&(task_thread->launch_mutex));
+
+    g_atomic_int_set(&thread->critical_region,
+		     FALSE);
+
+    if(success)
+      pthread_mutex_unlock(&(thread->suspend_mutex));
+
+    g_main_context_release(main_context);
+  }
+
+  /* entry point */
   gui_thread = AGS_GUI_THREAD(thread);
   audio_loop = AGS_AUDIO_LOOP(thread->parent);
   task_thread = AGS_TASK_THREAD(audio_loop->task_thread);
 
   /*  */
-  g_main_loop_ref(gui_thread->main_loop);
-
-  main_loop = gui_thread->main_loop;
   main_context = g_main_context_default();
 
   /*  */
-  i_stop = (guint) floor(1.0 / gui_thread->frequency * ((double) AGS_DEVOUT_DEFAULT_SAMPLERATE / (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE));
+  if(gui_thread->iter_stop_is_delay){
+    gui_thread->iter += 1;
 
-  if(gui_thread->frequency < 1.0 / (double) AGS_DEVOUT_DEFAULT_SAMPLERATE * (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE){
-    struct timespec start, stop, current, reserved;
-
-    /* calculate timing */
-    clock_gettime(CLOCK_MONOTONIC ,&start);
-
-    reserved.tv_sec = 0;
-    reserved.tv_nsec = NSEC_PER_SEC / gui_thread->frequency;
-
-    stop.tv_sec = start.tv_sec;
-    stop.tv_nsec = start.tv_nsec + ((i_stop - 1) * NSEC_PER_SEC / gui_thread->frequency);
-
-    while(current.tv_nsec >= NSEC_PER_SEC) {
-      stop.tv_nsec -= NSEC_PER_SEC;
-      stop.tv_sec++;
+    if(gui_thread->iter >= gui_thread->iter_stop){
+      ags_gui_thread_do_gtk_iteration();
+      gui_thread->iter = 0;
     }
 
-    /*  */
-    for(i = 0; i < i_stop; i++){
-      if(!g_main_context_acquire(main_context)){
-	gboolean got_ownership = FALSE;
-
-	while(!got_ownership){
-	  got_ownership = g_main_context_wait(main_context,
-					      &gui_thread->cond,
-					      &gui_thread->mutex);
-	}
-      }
-
-      g_main_context_iteration(main_context, FALSE);
-
-      g_main_context_release(main_context);
-
-      /* do timing */
-      clock_gettime(CLOCK_MONOTONIC ,&current);
-
-      if(current.tv_sec > stop.tv_sec ||
-	 current.tv_nsec > stop.tv_nsec && current.tv_sec == stop.tv_sec){
-	break;
-      }
-    }
   }else{
-    struct timespec wait;
-    guint iter_val;
-
-    wait.tv_sec = 0;
-    //    wait.tv_nsec = round(1000000000 / (double) AGS_DEVOUT_DEFAULT_SAMPLERATE * (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE);
-
-    iter_val = (1.0 / gui_thread->frequency) / (1.0 / (double) AGS_DEVOUT_DEFAULT_SAMPLERATE * (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE);
-    //    g_message("paint\0");
-      
-    /*  */
-    if(gui_thread->iter > 1.0){
-      if(!g_main_context_acquire(main_context)){
-	gboolean got_ownership = FALSE;
-
-	while(!got_ownership){
-	  got_ownership = g_main_context_wait(main_context,
-					      &gui_thread->cond,
-					      &gui_thread->mutex);
-	}
-      }
-
-      g_main_context_iteration(main_context, FALSE);
-
-      g_main_context_release(main_context);
-
-      gui_thread->iter = 0.0;
-    }else{
-      gui_thread->iter += iter_val;
-      nanosleep(&wait, NULL);
+    for(gui_thread->iter = 0; gui_thread->iter < gui_thread->iter_stop; gui_thread->iter++){
+      ags_gui_thread_do_gtk_iteration();
     }
   }
+}
 
-  g_main_loop_unref(gui_thread->main_loop);
+void
+ags_gui_thread_suspend(AgsThread *thread)
+{
+  gboolean success;
+  gboolean critical_region;
+
+  success = pthread_mutex_trylock(&(thread->suspend_mutex));
+  critical_region = g_atomic_int_get(&(thread->critical_region));
+
+  if(success || critical_region){
+    AgsAudioLoop *audio_loop;
+    AgsGuiThread *gui_thread;
+    AgsTaskThread *task_thread;
+    
+    if(success){
+      pthread_mutex_unlock(&(thread->suspend_mutex));
+    }
+
+    gui_thread = AGS_GUI_THREAD(thread);
+    audio_loop = AGS_AUDIO_LOOP(thread->parent);
+    task_thread = AGS_TASK_THREAD(audio_loop->task_thread);  
+
+    pthread_mutex_unlock(&(task_thread->launch_mutex));
+  }
+}
+
+void
+ags_gui_thread_resume(AgsThread *thread)
+{
+  gboolean success;
+  gboolean critical_region;
+
+  success = pthread_mutex_trylock(&(thread->suspend_mutex));
+  critical_region = g_atomic_int_get(&(thread->critical_region));
+
+  if(success || critical_region){
+    AgsAudioLoop *audio_loop;
+    AgsGuiThread *gui_thread;
+    AgsTaskThread *task_thread;
+
+    if(success){
+      pthread_mutex_unlock(&(thread->suspend_mutex));
+    }
+
+    gui_thread = AGS_GUI_THREAD(thread);
+    audio_loop = AGS_AUDIO_LOOP(thread->parent);
+    task_thread = AGS_TASK_THREAD(audio_loop->task_thread);  
+
+    pthread_mutex_lock(&(task_thread->launch_mutex));
+  }
 }
 
 void
@@ -276,8 +322,7 @@ ags_gui_thread_stop(AgsThread *thread)
   AGS_THREAD_CLASS(ags_gui_thread_parent_class)->stop(thread);  
 
   /*  */
-  //  GDK_THREADS_ENTER();
-  //  gdk_flush();
+  gdk_flush();
 }
 
 AgsGuiThread*

@@ -28,6 +28,7 @@
 
 #include <ags/thread/ags_audio_loop.h>
 #include <ags/thread/ags_gui_thread.h>
+#include <ags/thread/ags_single_thread.h>
 
 #include <ags/audio/ags_channel.h>
 #include <ags/audio/ags_output.h>
@@ -126,8 +127,6 @@ ags_main_init(AgsMain *main)
 				      "file\0", stdout,
 				      NULL);
   ags_colors_alloc();
-
-  mlockall(MCL_CURRENT | MCL_FUTURE);
 
   // ags_log_message(ags_default_log, "starting Advanced Gtk+ Sequencer\n\0");
 }
@@ -375,40 +374,111 @@ int
 main(int argc, char **argv)
 {
   AgsMain *main;
+  AgsDevout *devout;
   AgsWindow *window;
   AgsGuiThread *gui_thread;
-
+  struct sched_param param;
   const char *error;
+  gboolean single_thread = FALSE;
+  guint i;
+
+  for(i = 0; i < argc; i++){
+    if(!strncmp(argv[i], "--single-thread\0", 16)){
+      single_thread = TRUE;
+    }
+  }
+
+  /* Declare ourself as a real time task */
+  param.sched_priority = AGS_PRIORITY;
+
+  if(sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+    perror("sched_setscheduler failed\0");
+  }
+
+  mlockall(MCL_CURRENT | MCL_FUTURE);
 
   LIBXML_TEST_VERSION;
 
   gtk_init(&argc, &argv);
   ipatch_init();
 
-  main = ags_main_new();
+  if(!single_thread){
+    main = ags_main_new();
 
-  window = ags_window_new(main);
-  gtk_window_set_default_size((GtkWindow *) window, 500, 500);
-  gtk_paned_set_position((GtkPaned *) window->paned, 300);
-  ags_connectable_connect(window);
-  gtk_widget_show_all((GtkWidget *) window);
+    devout = ags_devout_new(main);
+    main->devout = devout; //TODO:JK: really ugly
+    main->devout->main = main; //TODO:JK: really ugly
 
-  main->devout = window->devout;
-  main->main_loop = window->devout->audio_loop;
-  g_object_set(G_OBJECT(main->main_loop),
-	       "devout\0", main->devout,
-	       NULL);
+    /* threads */
+    devout->audio_loop = ags_audio_loop_new(G_OBJECT(devout), G_OBJECT(main));
+    devout->task_thread = AGS_TASK_THREAD(devout->audio_loop->task_thread);
+    devout->devout_thread = AGS_DEVOUT_THREAD(devout->audio_loop->devout_thread);
 
-  //TODO:JK: really ugly
-  main->devout->main = main;
-  AGS_AUDIO_LOOP(main->main_loop)->main = main;
+    /* AgsWindow */
+    window = ags_window_new(main);
+    window->devout = devout; //TODO:JK: really ugly
 
-  /*  */
-  main->gui_loop = AGS_AUDIO_LOOP(main->main_loop)->gui_thread;
-  ags_thread_start(main->gui_loop);
+    gtk_window_set_default_size((GtkWindow *) window, 500, 500);
+    gtk_paned_set_position((GtkPaned *) window->paned, 300);
 
-  pthread_join(main->gui_loop->thread,
-	       NULL);
+    ags_connectable_connect(window);
+    gtk_widget_show_all((GtkWidget *) window);
+
+    /* AgsMainLoop */
+    main->main_loop = window->devout->audio_loop;
+    g_object_set(G_OBJECT(main->main_loop),
+		 "devout\0", main->devout,
+		 NULL);
+
+    ags_thread_start(main->main_loop);
+
+    //TODO:JK: really ugly
+    AGS_AUDIO_LOOP(main->main_loop)->main = main;
+
+    /*  */
+    main->gui_loop = AGS_AUDIO_LOOP(main->main_loop)->gui_thread;
+
+    ags_thread_start(main->gui_loop);
+
+    pthread_join(main->gui_loop->thread,
+		 NULL);
+  }else{
+    AgsSingleThread *single_thread;
+
+    main = ags_main_new();
+
+    devout = ags_devout_new(main);
+    main->devout = devout; //TODO:JK: really ugly
+    main->devout->main = main; //TODO:JK: really ugly
+
+    /* threads */
+    single_thread = ags_single_thread_new(devout);
+    devout->audio_loop = single_thread->audio_loop;
+    devout->audio_loop->main = main; //TODO:JK: really ugly
+    devout->task_thread = single_thread->task_thread;
+    devout->devout_thread = single_thread->devout_thread;
+
+    /* AgsWindow */
+    window = ags_window_new(main);
+    window->devout = devout; //TODO:JK: really ugly
+
+    gtk_window_set_default_size((GtkWindow *) window, 500, 500);
+    gtk_paned_set_position((GtkPaned *) window->paned, 300);
+
+    ags_connectable_connect(window);
+    gtk_widget_show_all((GtkWidget *) window);
+
+    /* AgsMainLoop */
+    main->main_loop = window->devout->audio_loop;
+    g_object_set(G_OBJECT(main->main_loop),
+		 "devout\0", main->devout,
+		 NULL);
+
+    /*  */
+    main->gui_loop = AGS_AUDIO_LOOP(main->main_loop)->gui_thread;
+
+    ags_thread_start(single_thread);
+  }
 
   return(0);
 }

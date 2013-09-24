@@ -102,9 +102,16 @@ ags_window_init(AgsWindow *window)
 {
   GtkVBox *vbox;
   GtkWidget *scrolled_window;
+  GError *error;
+
+  error = NULL;
+
+  g_object_set(G_OBJECT(window),
+	       "icon\0", gdk_pixbuf_new_from_file("./doc/images/jumper.png\0", &error),
+	       NULL);
 
   window->main = NULL;
-  window->devout = ags_devout_new(NULL);
+  window->devout = NULL;
 
   window->name = g_strdup("unnamed\0");
 
@@ -163,7 +170,6 @@ ags_window_connect(AgsConnectable *connectable)
   ags_menu_bar_connect(window->menu_bar);
   ags_editor_connect(window->editor);
   ags_navigation_connect(window->navigation);
-  ags_devout_start_default_threads(window->devout);
 }
 
 void
@@ -218,7 +224,6 @@ ags_window_new(GObject *main)
   window = (AgsWindow *) g_object_new(AGS_TYPE_WINDOW, NULL);
 
   window->main = main;
-  window->devout->main = main;
 
   return(window);
 }

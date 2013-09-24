@@ -115,8 +115,8 @@ ags_task_thread_init(AgsTaskThread *task_thread)
 
   thread = AGS_THREAD(task_thread);
 
-  g_atomic_int_or(&thread->flags,
-		  AGS_THREAD_LOCK_GREEDY_RUN_MUTEX);
+  //  g_atomic_int_or(&thread->flags,
+  //		  AGS_THREAD_LOCK_GREEDY_RUN_MUTEX);
 
   pthread_mutex_init(&(task_thread->read_mutex), NULL);
   pthread_mutex_init(&(task_thread->launch_mutex), NULL);
@@ -165,7 +165,9 @@ ags_task_thread_finalize(GObject *gobject)
 void
 ags_task_thread_start(AgsThread *thread)
 {
-  AGS_THREAD_CLASS(ags_task_thread_parent_class)->start(thread);
+  if((AGS_THREAD_SINGLE_LOOP & (thread->flags)) == 0){
+    AGS_THREAD_CLASS(ags_task_thread_parent_class)->start(thread);
+  }
 }
 
 void
@@ -177,7 +179,6 @@ ags_task_thread_run(AgsThread *thread)
   static struct timespec play_idle;
   static useconds_t idle;
   guint prev_pending;
-  GMainContext *main_context;
   static gboolean initialized = FALSE;
 
   task_thread = AGS_TASK_THREAD(thread);
@@ -220,19 +221,8 @@ ags_task_thread_run(AgsThread *thread)
     AgsTask *task;
     int i;
 
-    main_context = g_main_context_default();
-
-    if(!g_main_context_acquire(main_context)){
-      gboolean got_ownership = FALSE;
-
-      while(!got_ownership){
-	got_ownership = g_main_context_wait(main_context,
-					    &task_thread->cond,
-					    &task_thread->mutex);
-      }
-    }
-
     pthread_mutex_lock(&(task_thread->launch_mutex));
+    pthread_mutex_lock(&(AGS_AUDIO_LOOP(thread->parent)->recall_mutex));
 
     for(i = 0; i < task_thread->pending; i++){
       task = AGS_TASK(list->data);
@@ -244,19 +234,8 @@ ags_task_thread_run(AgsThread *thread)
       list = list->next;
     }
 
+    pthread_mutex_unlock(&(AGS_AUDIO_LOOP(thread->parent)->recall_mutex));
     pthread_mutex_unlock(&(task_thread->launch_mutex));
-
-    g_main_context_release(main_context);
-  }
-
-  /* sleep if wanted */
-  if((AGS_THREAD_RUNNING & (AGS_THREAD(AGS_AUDIO_LOOP(thread->parent)->devout_thread)->flags)) != 0){
-    //FIXME:JK: this isn't very efficient
-    //    nanosleep(&play_idle, NULL);
-  }else{
-    //FIXME:JK: this isn't very efficient
-    nanosleep(&play_idle, NULL);
-    //    usleep(idle);
   }
 }
 

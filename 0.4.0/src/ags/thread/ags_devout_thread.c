@@ -186,12 +186,14 @@ ags_devout_thread_start(AgsThread *thread)
     return;
   }
 
-  AGS_THREAD_CLASS(ags_devout_thread_parent_class)->start(thread);
-
   memset(devout->buffer[0], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
   memset(devout->buffer[1], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
   memset(devout->buffer[2], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
   memset(devout->buffer[3], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
+
+  if((AGS_THREAD_SINGLE_LOOP & (thread->flags)) == 0){
+    AGS_THREAD_CLASS(ags_devout_thread_parent_class)->start(thread);
+  }
 }
 
 void
@@ -229,13 +231,6 @@ ags_devout_thread_stop(AgsThread *thread)
 
   devout = AGS_DEVOUT(thread->devout);
   audio_loop = devout->audio_loop;
-
-  if((AGS_AUDIO_LOOP_PLAY_RECALL & (devout->flags)) != 0 ||
-     (AGS_AUDIO_LOOP_PLAY_CHANNEL & (devout->flags)) != 0 ||
-     (AGS_AUDIO_LOOP_PLAY_AUDIO & (devout->flags)) != 0){
-    g_message("ags_devout_thread_stop:  still playing\n\0");
-    return;
-  }
 
   if((AGS_DEVOUT_START_PLAY & (devout->flags)) != 0){
     g_message("ags_devout_thread_stop:  just starting\n\0");

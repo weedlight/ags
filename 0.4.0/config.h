@@ -1,6 +1,12 @@
 /* config.h.  Generated from config.h.in by configure.  */
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* "YOUR CHANCE" */
+#define AGS_LINUX_SIGNALS 1
+
+/* "great!" */
+/* #undef AGS_WITH_PTHREAD */
+
 /* Define to 1 if you have the `clock_gettime' function. */
 #define HAVE_CLOCK_GETTIME 1
 
@@ -97,7 +103,7 @@
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "0.3.16-SNAPSHOT"
+#define VERSION "0.3.99-SNAPSHOT"
 
 /* Define to rpl_malloc if the replacement function should be used. */
 /* #undef malloc */

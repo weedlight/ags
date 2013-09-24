@@ -45,11 +45,13 @@ void ags_thread_connect(AgsConnectable *connectable);
 void ags_thread_disconnect(AgsConnectable *connectable);
 void ags_thread_finalize(GObject *gobject);
 
+void ags_thread_resume_handler(int sig);
+void ags_thread_suspend_handler(int sig);
+
 void ags_thread_set_devout(AgsThread *thread, GObject *devout);
 
 void ags_thread_real_start(AgsThread *thread);
 void* ags_thread_loop(void *ptr);
-void ags_thread_real_run(AgsThread *thread);
 void ags_thread_real_timelock(AgsThread *thread);
 void* ags_thread_timelock_loop(void *ptr);
 void ags_thread_real_stop(AgsThread *thread);
@@ -62,6 +64,8 @@ enum{
 enum{
   START,
   RUN,
+  SUSPEND,
+  RESUME,
   TIMELOCK,
   STOP,
   LAST_SIGNAL,
@@ -70,7 +74,7 @@ enum{
 static gpointer ags_thread_parent_class = NULL;
 static guint thread_signals[LAST_SIGNAL];
 
-#define NSEC_PER_SEC    (1000000000) /* The number of nsecs per sec. */
+static __thread AgsThread *ags_thread_self = NULL;
 
 GType
 ags_thread_get_type()
@@ -148,6 +152,8 @@ ags_thread_class_init(AgsThreadClass *thread)
   /* AgsThread */
   thread->start = ags_thread_real_start;
   thread->run = NULL;
+  thread->suspend = NULL;
+  thread->resume = NULL;
   thread->timelock = ags_thread_real_timelock;
   thread->stop = ags_thread_real_stop;
 
@@ -166,6 +172,24 @@ ags_thread_class_init(AgsThreadClass *thread)
 		 G_TYPE_FROM_CLASS (thread),
 		 G_SIGNAL_RUN_LAST,
 		 G_STRUCT_OFFSET (AgsThreadClass, run),
+		 NULL, NULL,
+		 g_cclosure_marshal_VOID__VOID,
+		 G_TYPE_NONE, 0);
+
+  thread_signals[SUSPEND] =
+    g_signal_new("suspend\0",
+		 G_TYPE_FROM_CLASS (thread),
+		 G_SIGNAL_RUN_LAST,
+		 G_STRUCT_OFFSET (AgsThreadClass, suspend),
+		 NULL, NULL,
+		 g_cclosure_marshal_VOID__VOID,
+		 G_TYPE_NONE, 0);
+
+  thread_signals[RESUME] =
+    g_signal_new("resume\0",
+		 G_TYPE_FROM_CLASS (thread),
+		 G_SIGNAL_RUN_LAST,
+		 G_STRUCT_OFFSET (AgsThreadClass, resume),
 		 NULL, NULL,
 		 g_cclosure_marshal_VOID__VOID,
 		 G_TYPE_NONE, 0);
@@ -205,8 +229,23 @@ ags_thread_connectable_interface_init(AgsConnectableInterface *connectable)
 void
 ags_thread_init(AgsThread *thread)
 {
+  struct sigaction sa;
+
   g_atomic_int_set(&(thread->flags),
 		   0);
+
+  sigfillset(&thread->wait_mask);
+  sigdelset(&thread->wait_mask, AGS_THREAD_SUSPEND_SIG);
+  sigdelset(&thread->wait_mask, AGS_THREAD_RESUME_SIG);
+
+  sigfillset(&sa.sa_mask);
+  sa.sa_flags = 0;
+
+  sa.sa_handler = ags_thread_resume_handler;
+  sigaction(AGS_THREAD_RESUME_SIG, &sa, NULL);
+
+  sa.sa_handler = ags_thread_suspend_handler;
+  sigaction(AGS_THREAD_SUSPEND_SIG, &sa, NULL);
 
   pthread_attr_init(&(thread->thread_attr));
 
@@ -232,9 +271,11 @@ ags_thread_init(AgsThread *thread)
 
   thread->timelock.tv_sec = 0;
   thread->timelock.tv_nsec = floor(NSEC_PER_SEC /
-				   ((double) AGS_DEVOUT_DEFAULT_SAMPLERATE * (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE));
+				   (AGS_AUDIO_LOOP_DEFAULT_JIFFIE + 1));
 
   thread->greedy_locks = NULL;
+
+  pthread_mutex_init(&(thread->suspend_mutex), NULL);
 
   thread->devout = NULL;
 
@@ -346,6 +387,28 @@ ags_thread_finalize(GObject *gobject)
 
   /* call parent */
   G_OBJECT_CLASS(ags_thread_parent_class)->finalize(gobject);
+}
+
+void
+ags_thread_resume_handler(int sig)
+{
+  g_atomic_int_and(&ags_thread_self->flags,
+		   (~AGS_THREAD_SUSPENDED));
+
+  ags_thread_resume(ags_thread_self);
+}
+
+void
+ags_thread_suspend_handler(int sig)
+{
+  if ((AGS_THREAD_SUSPENDED & (g_atomic_int_get(&ags_thread_self->flags))) != 0) return;
+
+  g_atomic_int_or(&ags_thread_self->flags,
+		  AGS_THREAD_SUSPENDED);
+
+  ags_thread_suspend(ags_thread_self);
+
+  do sigsuspend(&ags_thread_self->wait_mask); while ((AGS_THREAD_SUSPENDED & (g_atomic_int_get(&ags_thread_self->flags))) != 0);
 }
 
 void
@@ -1393,7 +1456,9 @@ ags_thread_loop(void *ptr)
     }
   }
 
-  thread = AGS_THREAD(ptr);
+  ags_thread_self =
+    thread = AGS_THREAD(ptr);
+
   main_loop = ags_thread_get_toplevel(thread);
 
   current_tic = ags_main_loop_get_tic(AGS_MAIN_LOOP(main_loop));
@@ -1657,6 +1722,28 @@ ags_thread_run(AgsThread *thread)
   g_object_unref(G_OBJECT(thread));
 }
 
+void
+ags_thread_suspend(AgsThread *thread)
+{
+  g_return_if_fail(AGS_IS_THREAD(thread));
+
+  g_object_ref(G_OBJECT(thread));
+  g_signal_emit(G_OBJECT(thread),
+		thread_signals[SUSPEND], 0);
+  g_object_unref(G_OBJECT(thread));
+}
+
+void
+ags_thread_resume(AgsThread *thread)
+{
+  g_return_if_fail(AGS_IS_THREAD(thread));
+
+  g_object_ref(G_OBJECT(thread));
+  g_signal_emit(G_OBJECT(thread),
+		thread_signals[RESUME], 0);
+  g_object_unref(G_OBJECT(thread));
+}
+
 void*
 ags_thread_timelock_loop(void *ptr)
 {
@@ -1692,9 +1779,9 @@ ags_thread_timelock_loop(void *ptr)
     val = g_atomic_int_get(&(thread->flags));
 
     if((AGS_THREAD_WAIT_0 & val) != 0){
-      //      g_message("realtime\0");
+      //g_message("realtime\0");
     }else{
-      //      g_message("======== timelock ========\0");
+      g_message("======== timelock ========\0");
       ags_thread_timelock(thread);
     }
 
@@ -1713,7 +1800,7 @@ ags_thread_real_timelock(AgsThread *thread)
 
   pthread_mutex_lock(&(thread->greedy_mutex));
 
-#ifdef AGS_PTHREAD_SUSPEND
+#if defined(AGS_PTHREAD_SUSPEND) || defined(AGS_LINUX_SIGNALS)
   val = g_atomic_int_get(&(thread->flags));
 
   if((AGS_THREAD_SKIP_NON_GREEDY & val) != 0){
@@ -1771,14 +1858,18 @@ ags_thread_real_timelock(AgsThread *thread)
       ags_thread_main_loop_unlock_children(main_loop);
       ags_main_loop_set_last_sync(AGS_MAIN_LOOP(main_loop), tic);
     }
-#ifdef AGS_PTHREAD_SUSPEND
+#if defined(AGS_PTHREAD_SUSPEND) || defined(AGS_LINUX_SIGNALS)
   }else{
     g_atomic_int_or(&(thread->flags),
 		    AGS_THREAD_TIMELOCK_RESUME);
     
     /* throughput is mandatory */
+#ifdef AGS_PTHREAD_SUSPEND
     pthread_suspend(&(thread->thread));
-    
+#else
+    pthread_kill(thread_id, AGS_THREAD_SUSPEND_SIG);
+#endif
+
     /* allow non greedy to continue */
     greedy_locks = thread->greedy_locks;
 
@@ -1836,7 +1927,11 @@ ags_thread_real_timelock(AgsThread *thread)
     }
 
     /* your chance */
+#ifdef AGS_PTHREAD_SUSPEND
     pthread_resume(&(thread->thread));
+#else
+    pthread_kill(thread_id, AGS_THREAD_RESUME_SIG);
+#endif
   }
 #endif
   pthread_mutex_unlock(&(thread->greedy_mutex));

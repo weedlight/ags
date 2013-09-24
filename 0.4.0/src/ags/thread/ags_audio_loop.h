@@ -19,6 +19,8 @@
 #ifndef __AGS_AUDIO_LOOP_H__
 #define __AGS_AUDIO_LOOP_H__
 
+#include <math.h>
+
 #include <glib-object.h>
 
 #include <ags/thread/ags_thread.h>
@@ -29,6 +31,8 @@
 #define AGS_IS_AUDIO_LOOP(obj)             (G_TYPE_CHECK_INSTANCE_TYPE ((obj), AGS_TYPE_AUDIO_LOOP))
 #define AGS_IS_AUDIO_LOOP_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_AUDIO_LOOP))
 #define AGS_AUDIO_LOOP_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS(obj, AGS_TYPE_AUDIO_LOOP, AgsAudioLoopClass))
+
+#define AGS_AUDIO_LOOP_DEFAULT_JIFFIE ((guint) ceil(AGS_DEVOUT_DEFAULT_SAMPLERATE / AGS_DEVOUT_DEFAULT_BUFFER_SIZE))
 
 typedef struct _AgsAudioLoop AgsAudioLoop;
 typedef struct _AgsAudioLoopClass AgsAudioLoopClass;
@@ -42,8 +46,9 @@ typedef enum{
   AGS_AUDIO_LOOP_PLAY_CHANNEL_TERMINATING       = 1 << 5,
   AGS_AUDIO_LOOP_PLAY_AUDIO                     = 1 << 6,
   AGS_AUDIO_LOOP_PLAYING_AUDIO                  = 1 << 7,
-  AGS_AUDIO_LOOP_PLAY_AUDIO_TERMINATING         = 1 << 8,
-  AGS_AUDIO_LOOP_PLAY_NOTE                      = 1 << 9,
+  AGS_AUDIO_LOOP_PLAY_NOTATION                  = 1 << 8,
+  AGS_AUDIO_LOOP_PLAYING_NOTATION               = 1 << 9,
+  AGS_AUDIO_LOOP_PLAY_AUDIO_TERMINATING         = 1 << 10,
 }AgsAudioLoopFlags;
 
 struct _AgsAudioLoop
@@ -55,11 +60,15 @@ struct _AgsAudioLoop
   volatile guint tic;
   volatile guint last_sync;
 
+  gdouble frequency;
+
   GObject *main;
   
   AgsThread *task_thread;
   AgsThread *gui_thread;
   AgsThread *devout_thread;
+
+  pthread_mutex_t recall_mutex;
 
   guint play_recall_ref;
   GList *play_recall; // play AgsRecall
@@ -69,6 +78,9 @@ struct _AgsAudioLoop
 
   guint play_audio_ref;
   GList *play_audio; // play AgsAudio
+
+  guint play_notation_ref;
+  GList *play_notation;
 };
 
 struct _AgsAudioLoopClass
@@ -87,6 +99,6 @@ void ags_audio_loop_remove_channel(AgsAudioLoop *audio_loop, GObject *channel);
 void ags_audio_loop_add_recall(AgsAudioLoop *audio_loop, GObject *recall);
 void ags_audio_loop_remove_recall(AgsAudioLoop *audio_loop, GObject *recall);
 
-AgsAudioLoop* ags_audio_loop_new(GObject *devout);
+AgsAudioLoop* ags_audio_loop_new(GObject *devout, GObject *main);
 
 #endif /*__AGS_AUDIO_LOOP_H__*/

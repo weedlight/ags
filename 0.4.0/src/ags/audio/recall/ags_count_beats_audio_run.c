@@ -610,7 +610,7 @@ ags_count_beats_audio_run_notify_dependency(AgsRecall *recall,
   switch(notify_mode){
   case AGS_RECALL_NOTIFY_RUN:
     count_beats_audio_run->hide_ref += count;
-    //    g_message("count_beats_audio_run->hide_ref: %u\n\0", count_beats_audio_run->hide_ref);
+    g_message("count_beats_audio_run->hide_ref: %u\n\0", count_beats_audio_run->hide_ref);
     break;
   case AGS_RECALL_NOTIFY_AUDIO:
     break;

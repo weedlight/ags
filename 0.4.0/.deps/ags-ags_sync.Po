@@ -1,1 +1,3 @@
-ags-ags_sync.o: src/ags/thread/ags_sync.c
+ags-ags_sync.o: src/ags/thread/ags_sync.c /usr/include/stdc-predef.h
+
+/usr/include/stdc-predef.h:

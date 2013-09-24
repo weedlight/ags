@@ -2,12 +2,13 @@
 # Process this file with autoconf to produce a configure script.
 AC_PREREQ([2.68])
 AC_INIT([ags], [0.3.16-SNAPSHOT], [joel@weedlight.ch])
-AM_INIT_AUTOMAKE([ags], [0.3.16-SNAPSHOT])
+AM_INIT_AUTOMAKE([ags], [0.3.99-SNAPSHOT])
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
 AC_PROG_CC
+AC_PROG_RANLIB
 
 # Checks for libraries.
 # FIXME: Replace `main' with a function in `-ldl':
@@ -21,6 +22,11 @@ AC_CHECK_LIB([m], [main])
 # FIXME: Replace `main' with a function in `-lrt':
 AC_CHECK_LIB([rt], [main])
 
+AC_CHECK_LIB([pthread], [pthread_suspend], AC_DEFINE([AGS_WITH_PTHREAD], [1], ["great!"]), AC_DEFINE([AGS_LINUX_SIGNALS], [1], ["YOUR CHANCE"]))
+
+PKG_CHECK_MODULES([UUID], [uuid >= 2.20.0])
+AC_SUBST(UUID_CFLAGS)
+AC_SUBST(UUID_LIBS)
 
 PKG_CHECK_MODULES([LIBASOUND2], [alsa >= 1.0.25])
 AC_SUBST(LIBASOUND2_CFLAGS)

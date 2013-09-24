@@ -41,6 +41,8 @@ struct _AgsConnectableInterface
 
 GType ags_connectable_get_type();
 
+void ags_connectable_add_to_registry(AgsConnectable *connectable);
+
 void ags_connectable_connect(AgsConnectable *connectable);
 void ags_connectable_disconnect(AgsConnectable *connectable);
 

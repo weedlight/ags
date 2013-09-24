@@ -428,8 +428,10 @@ ags_menu_bar_about_callback(GtkWidget *menu_item, AgsMenuBar *menu_bar)
   static FILE *file = NULL;
   struct stat sb;
   static gchar *license;
+  static GdkPixbuf *logo;
+  GError *error;
 
-  gchar *authors[] = { "joel kraehemann\0", NULL }; 
+  gchar *authors[] = { "Joël Krähemann\0", NULL }; 
 
   if(file == NULL){
     file = fopen("./COPYING\0", "r\0");
@@ -438,12 +440,18 @@ ags_menu_bar_about_callback(GtkWidget *menu_item, AgsMenuBar *menu_bar)
     fread(license, sizeof(char), sb.st_size, file);
     license[sb.st_size] = '\0';
     fclose(file);
+
+    error = NULL;
+
+    logo = gdk_pixbuf_new_from_file("./doc/images/ags.png\0", &error);
   }
 
   gtk_show_about_dialog((GtkWindow *) gtk_widget_get_ancestor((GtkWidget *) menu_bar, GTK_TYPE_WINDOW),
 			"program-name\0", "ags\0",
 			"authors\0", authors,
 			"license\0", license,
-			"title\0", "ags\0",
+			"version\0", "0.3.99-SNAPSHOT\0",
+			"title\0", "Advanced Gtk+ Sequencer\0",
+			"logo\0", logo,
 			NULL);
 }

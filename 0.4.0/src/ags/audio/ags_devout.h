@@ -73,6 +73,8 @@ typedef enum
 
   AGS_DEVOUT_SHUTDOWN                       = 1 << 9,
   AGS_DEVOUT_START_PLAY                     = 1 << 10,
+
+  AGS_DEVOUT_NONBLOCKING                    = 1 << 11,
 }AgsDevoutFlags;
 
 typedef enum
@@ -189,8 +191,6 @@ void ags_devout_pcm_info(char *card_id,
 void ags_devout_tic(AgsDevout *devout);
 
 void ags_devout_note_offset_changed(AgsDevout *devout, guint note_offset);
-
-void ags_devout_start_default_threads(AgsDevout *devout);
 
 AgsDevout* ags_devout_new(GObject *main);
 
