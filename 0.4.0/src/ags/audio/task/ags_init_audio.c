@@ -137,25 +137,25 @@ void
 ags_init_audio_launch(AgsTask *task)
 {
   AgsInitAudio *init_audio;
-  AgsGroupId group_id;
+  AgsRecallID *recall_id;
+  GList *list;
 
   init_audio = AGS_INIT_AUDIO(task);
 
   /* init audio */
-  group_id = ags_audio_recursive_play_init(init_audio->audio,
-					   init_audio->playback, init_audio->sequencer, init_audio->notation);
-  AGS_DEVOUT_PLAY(init_audio->audio->devout_play)->group_id = group_id;
-
   if(init_audio->playback){
-    AGS_DEVOUT_PLAY(init_audio->audio->devout_play)->flags |= AGS_DEVOUT_PLAY_PLAYBACK;
+    list = ags_audio_recursive_play_init(init_audio->audio,
+					 TRUE, FALSE, FALSE);
   }
 
   if(init_audio->sequencer){
-    AGS_DEVOUT_PLAY(init_audio->audio->devout_play)->flags |= AGS_DEVOUT_PLAY_SEQUENCER;
+    list = ags_audio_recursive_play_init(init_audio->audio,
+					 FALSE, TRUE, FALSE);
   }
 
   if(init_audio->notation){
-    AGS_DEVOUT_PLAY(init_audio->audio->devout_play)->flags |= AGS_DEVOUT_PLAY_NOTATION;
+    list = ags_audio_recursive_play_init(init_audio->audio,
+					 FALSE, FALSE, TRUE);
   }
 }
 

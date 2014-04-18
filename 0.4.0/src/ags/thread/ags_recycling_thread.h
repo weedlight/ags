@@ -1,5 +1,5 @@
 /* AGS - Advanced GTK Sequencer
- * Copyright (C) 2005-2011 Joël Krähemann
+ * Copyright (C) 2013 Joël Krähemann
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,13 +61,12 @@ struct _AgsRecyclingThreadClass
   void (*play_channel)(AgsRecyclingThread *recycling_thread,
 		       GObject *channel,
 		       AgsRecallID *recall_id,
-		       gint stage, gboolean do_recall);
+		       gint stage);
 
   void (*play_audio)(AgsRecyclingThread *recycling_thread,
 		     GObject *output, GObject *audio,
-		     AgsRecycling *first_recycling, AgsRecycling *last_recycling,
-		     AgsRecallID *recall_id, AgsGroupId next_group_id,
-		     gint stage, gboolean do_recall);
+		     AgsRecallID *recall_id,
+		     gint stage);
 };
 
 GType ags_recycling_thread_get_type();
@@ -75,13 +74,12 @@ GType ags_recycling_thread_get_type();
 void ags_recycling_thread_play_channel(AgsRecyclingThread *recycling_thread,
 				       GObject *channel,
 				       AgsRecallID *recall_id,
-				       gint stage, gboolean do_recall);
+				       gint stage);
 
 void ags_recycling_thread_play_audio(AgsRecyclingThread *recycling_thread,
 				     GObject *output, GObject *audio,
-				     AgsRecycling *first_recycling, AgsRecycling *last_recycling,
-				     AgsRecallID *recall_id, AgsGroupId next_group_id,
-				     gint stage, gboolean do_recall);
+				     AgsRecallID *recall_id,
+				     gint stage);
 
 AgsRecyclingThread* ags_recycling_thread_new();
 

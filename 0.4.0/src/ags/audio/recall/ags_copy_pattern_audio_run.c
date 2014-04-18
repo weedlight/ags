@@ -17,17 +17,27 @@
  */
 
 #include <ags/audio/recall/ags_copy_pattern_audio_run.h>
+#include <ags/audio/recall/ags_copy_pattern_audio.h>
 
 #include <ags-lib/object/ags_connectable.h>
+
+#include <ags/main.h>
+
+#include <ags/util/ags_id_generator.h>
+
 #include <ags/object/ags_dynamic_connectable.h>
+#include <ags/object/ags_plugin.h>
+
+#include <ags/file/ags_file_stock.h>
+#include <ags/file/ags_file_id_ref.h>
+#include <ags/file/ags_file_lookup.h>
 
 #include <ags/audio/ags_recall_container.h>
-
-#include <ags/audio/recall/ags_copy_pattern_audio.h>
 
 void ags_copy_pattern_audio_run_class_init(AgsCopyPatternAudioRunClass *copy_pattern_audio_run);
 void ags_copy_pattern_audio_run_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_copy_pattern_audio_run_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable);
+void ags_copy_pattern_audio_run_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_copy_pattern_audio_run_init(AgsCopyPatternAudioRun *copy_pattern_audio_run);
 void ags_copy_pattern_audio_run_set_property(GObject *gobject,
 					     guint prop_id,
@@ -57,6 +67,7 @@ enum{
 static gpointer ags_copy_pattern_audio_run_parent_class = NULL;
 static AgsConnectableInterface* ags_copy_pattern_audio_run_parent_connectable_interface;
 static AgsDynamicConnectableInterface *ags_copy_pattern_audio_run_parent_dynamic_connectable_interface;
+static AgsPluginInterface *ags_copy_pattern_audio_run_parent_plugin_interface;
 
 GType
 ags_copy_pattern_audio_run_get_type()
@@ -88,6 +99,12 @@ ags_copy_pattern_audio_run_get_type()
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_copy_pattern_audio_run_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };    
+
     ags_type_copy_pattern_audio_run = g_type_register_static(AGS_TYPE_RECALL_AUDIO_RUN,
 							     "AgsCopyPatternAudioRun\0",
 							     &ags_copy_pattern_audio_run_info,
@@ -100,6 +117,10 @@ ags_copy_pattern_audio_run_get_type()
     g_type_add_interface_static(ags_type_copy_pattern_audio_run,
 				AGS_TYPE_DYNAMIC_CONNECTABLE,
 				&ags_dynamic_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_copy_pattern_audio_run,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_copy_pattern_audio_run);
@@ -123,7 +144,7 @@ ags_copy_pattern_audio_run_class_init(AgsCopyPatternAudioRunClass *copy_pattern_
   gobject->finalize = ags_copy_pattern_audio_run_finalize;
 
   /* properties */
-  param_spec = g_param_spec_object("count_beats_audio_run\0",
+  param_spec = g_param_spec_object("count-beats-audio-run\0",
 				   "assigned AgsCountBeatsAudioRun\0",
 				   "the AgsCountBeatsAudioRun which emits beat signal\0",
 				   AGS_TYPE_COUNT_BEATS_AUDIO_RUN,
@@ -159,9 +180,19 @@ ags_copy_pattern_audio_run_dynamic_connectable_interface_init(AgsDynamicConnecta
 }
 
 void
+ags_copy_pattern_audio_run_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  ags_copy_pattern_audio_run_parent_plugin_interface = g_type_interface_peek_parent(plugin);
+}
+
+void
 ags_copy_pattern_audio_run_init(AgsCopyPatternAudioRun *copy_pattern_audio_run)
 {
-  AGS_RECALL(copy_pattern_audio_run)->flags |= AGS_RECALL_SEQUENCER;
+  AGS_RECALL(copy_pattern_audio_run)->name = "ags-copy-pattern\0";
+  AGS_RECALL(copy_pattern_audio_run)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(copy_pattern_audio_run)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(copy_pattern_audio_run)->xml_type = "ags-copy-pattern-audio-run\0";
+  AGS_RECALL(copy_pattern_audio_run)->port = NULL;
 
   copy_pattern_audio_run->hide_ref = 0;
   copy_pattern_audio_run->hide_ref_counter = 0;
@@ -288,44 +319,6 @@ ags_copy_pattern_audio_run_disconnect_dynamic(AgsDynamicConnectable *dynamic_con
   ags_copy_pattern_audio_run_parent_dynamic_connectable_interface->connect_dynamic(dynamic_connectable);
 }
 
-void
-ags_copy_pattern_audio_run_resolve_dependencies(AgsRecall *recall)
-{
-  AgsRecall *template;
-  AgsCopyPatternAudioRun *copy_pattern_audio_run;
-  AgsRecallDependency *recall_dependency;
-  AgsCountBeatsAudioRun *count_beats_audio_run;
-  GList *list;
-  AgsGroupId group_id;
-  guint i, i_stop;
-
-  copy_pattern_audio_run = AGS_COPY_PATTERN_AUDIO_RUN(recall);
-
-  template = AGS_RECALL(ags_recall_find_template(AGS_RECALL_CONTAINER(recall->container)->recall_audio_run)->data);
-
-  list = template->dependencies;
-  group_id = recall->recall_id->group_id;
-
-  count_beats_audio_run = NULL;
-  i_stop = 1;
-
-  for(i = 0; i < i_stop && list != NULL;){
-    recall_dependency = AGS_RECALL_DEPENDENCY(list->data);
-
-    if(AGS_IS_COUNT_BEATS_AUDIO_RUN(recall_dependency->dependency)){
-      count_beats_audio_run = (AgsCountBeatsAudioRun *) ags_recall_dependency_resolve(recall_dependency, group_id);
-
-      i++;
-    }
-
-    list = list->next;
-  }
-
-  g_object_set(G_OBJECT(recall),
-	       "count_beats_audio_run\0", count_beats_audio_run,
-	       NULL);
-}
-
 AgsRecall*
 ags_copy_pattern_audio_run_duplicate(AgsRecall *recall,
 				     AgsRecallID *recall_id,
@@ -365,13 +358,67 @@ ags_copy_pattern_audio_run_notify_dependency(AgsRecall *recall, guint notify_mod
   }
 }
 
+void
+ags_copy_pattern_audio_run_resolve_dependencies(AgsRecall *recall)
+{
+  AgsRecall *template;
+  AgsRecallContainer *recall_container;
+  AgsCopyPatternAudioRun *copy_pattern_audio_run;
+  AgsRecallDependency *recall_dependency;
+  AgsCountBeatsAudioRun *count_beats_audio_run;
+  GList *list;
+  AgsRecallID *recall_id;
+  guint i, i_stop;
+  
+  copy_pattern_audio_run = AGS_COPY_PATTERN_AUDIO_RUN(recall);
+  
+  recall_container = AGS_RECALL_CONTAINER(recall->container);
+  
+  list = ags_recall_find_template(recall_container->recall_audio_run);
+  if(list != NULL){
+    template = AGS_RECALL(list->data);
+  }else{
+    g_warning("AgsRecallClass::resolve - missing dependency");
+    return;
+  }
+
+  list = template->dependencies;
+  count_beats_audio_run = NULL;
+  i_stop = 1;
+
+  for(i = 0; i < i_stop && list != NULL;){
+    recall_dependency = AGS_RECALL_DEPENDENCY(list->data);
+
+    if(AGS_IS_COUNT_BEATS_AUDIO_RUN(recall_dependency->dependency)){
+      if(((AGS_RECALL_INPUT_ORIENTATED & (recall->flags)) != 0 &&
+	  (AGS_RECALL_INPUT_ORIENTATED & (AGS_RECALL(recall_dependency->dependency)->flags)) != 0) ||
+	 ((AGS_RECALL_OUTPUT_ORIENTATED & (recall->flags)) != 0 &&
+	  (AGS_RECALL_OUTPUT_ORIENTATED & (AGS_RECALL(recall_dependency->dependency)->flags)) != 0)){
+	recall_id = recall->recall_id;
+      }else{
+	recall_id = recall->recall_id->recycling_container->parent->recall_id;
+      }
+
+      count_beats_audio_run = (AgsCountBeatsAudioRun *) ags_recall_dependency_resolve(recall_dependency, recall_id);
+
+      i++;
+    }
+
+    list = list->next;
+  }
+
+  g_object_set(G_OBJECT(recall),
+	       "count-beats-audio-run\0", count_beats_audio_run,
+	       NULL);
+}
+
 AgsCopyPatternAudioRun*
 ags_copy_pattern_audio_run_new(AgsCountBeatsAudioRun *count_beats_audio_run)
 {
   AgsCopyPatternAudioRun *copy_pattern_audio_run;
 
   copy_pattern_audio_run = (AgsCopyPatternAudioRun *) g_object_new(AGS_TYPE_COPY_PATTERN_AUDIO_RUN,
-								   "count_beats_audio_run\0", count_beats_audio_run,
+								   "count-beats-audio-run\0", count_beats_audio_run,
 								   NULL);
 
   return(copy_pattern_audio_run);

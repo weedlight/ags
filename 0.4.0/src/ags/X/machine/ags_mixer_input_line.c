@@ -19,19 +19,23 @@
 #include <ags/X/machine/ags_mixer_input_line.h>
 
 #include <ags-lib/object/ags_connectable.h>
+
+#include <ags/plugin/ags_plugin_stock.h>
+
+#include <ags/audio/ags_recall_factory.h>
 #include <ags/audio/ags_recall_container.h>
 
 #include <ags/audio/recall/ags_volume_channel.h>
 #include <ags/audio/recall/ags_volume_channel_run.h>
 
 #include <ags/X/ags_window.h>
+#include <ags/X/ags_line_member.h>
 
 #include <ags/X/machine/ags_mixer.h>
 
 void ags_mixer_input_line_class_init(AgsMixerInputLineClass *mixer_input_line);
 void ags_mixer_input_line_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_mixer_input_line_init(AgsMixerInputLine *mixer_input_line);
-void ags_mixer_input_line_destroy(GtkObject *object);
 void ags_mixer_input_line_connect(AgsConnectable *connectable);
 void ags_mixer_input_line_disconnect(AgsConnectable *connectable);
 
@@ -101,24 +105,38 @@ ags_mixer_input_line_connectable_interface_init(AgsConnectableInterface *connect
 void
 ags_mixer_input_line_init(AgsMixerInputLine *mixer_input_line)
 {
-  mixer_input_line->flags = 0;
+  AgsLineMember *line_member;
+  GtkWidget *widget;
 
-  mixer_input_line->volume = (GtkVScale *) gtk_vscale_new_with_range(0.0, 2.00, 0.025);
-  gtk_range_set_value((GtkRange *) mixer_input_line->volume, 1.0);
-  gtk_range_set_inverted((GtkRange *) mixer_input_line->volume, TRUE);
-  gtk_scale_set_digits((GtkScale *) mixer_input_line->volume, 3);
-  gtk_widget_set_size_request((GtkWidget *) mixer_input_line->volume, -1, 100);
-  gtk_table_attach(AGS_LINE(mixer_input_line)->table,
-		   (GtkWidget *) mixer_input_line->volume,
-		   0, 1,
-		   1, 2,
-		   GTK_EXPAND, GTK_EXPAND,
-		   0, 0);
-}
+  /* volume */
+  line_member = (AgsLineMember *) g_object_new(AGS_TYPE_LINE_MEMBER,
+					       "widget-type\0", GTK_TYPE_VSCALE,
+					       "plugin-name\0", "ags-volume\0",
+					       //					       "specifier\0", g_type_name(AGS_TYPE_RECALL_CHANNEL),
+					       //					       "control-port\0", g_strdup("adjustmet[0].value\0"),
+					       //					       "port-data-length\0", sizeof(gdouble),
+					       NULL);
+  ags_expander_add(AGS_LINE(mixer_input_line)->expander,
+		   GTK_WIDGET(line_member),
+		   0, 0,
+		   1, 1);
 
-void
-ags_mixer_input_line_destroy(GtkObject *object)
-{
+  widget = gtk_bin_get_child(GTK_BIN(line_member));
+
+  gtk_scale_set_digits(GTK_SCALE(widget),
+		       3);
+
+  gtk_range_set_range(GTK_RANGE(widget),
+		      0.0, 2.00);
+  gtk_range_set_increments(GTK_RANGE(widget),
+			   0.025, 0.1);
+  gtk_range_set_value(GTK_RANGE(widget),
+		      1.0);
+  gtk_range_set_inverted(GTK_RANGE(widget),
+			 TRUE);
+
+  gtk_widget_set_size_request(widget,
+			      -1, 100);
 }
 
 void
@@ -153,11 +171,14 @@ ags_mixer_input_line_set_channel(AgsLine *line, AgsChannel *channel)
   mixer_input_line = AGS_MIXER_INPUT_LINE(line);
 
   if(line->channel != NULL){
-    mixer_input_line->flags &= (~AGS_MIXER_INPUT_LINE_MAPPED_RECALL);
+    line->flags &= (~AGS_LINE_MAPPED_RECALL);
   }
 
-  if(channel != NULL)
-    ags_mixer_input_line_map_recall(mixer_input_line);
+  if(channel != NULL){
+    if((AGS_LINE_PREMAPPED_RECALL & (line->flags)) == 0){
+      ags_mixer_input_line_map_recall(mixer_input_line);
+    }
+  }
 }
 
 void
@@ -167,12 +188,10 @@ ags_mixer_input_line_map_recall(AgsMixerInputLine *mixer_input_line)
   AgsLine *line;
   AgsAudio *audio;
   AgsChannel *source;
-  AgsRecallContainer *play_volume_channel_container;
-  AgsVolumeChannel *volume_channel;
-  AgsVolumeChannelRun *volume_channel_run;
   guint i;
 
   line = AGS_LINE(mixer_input_line);
+  line->flags |= AGS_LINE_MAPPED_RECALL;
 
   audio = AGS_AUDIO(line->channel->audio);
 
@@ -180,45 +199,17 @@ ags_mixer_input_line_map_recall(AgsMixerInputLine *mixer_input_line)
 
   source = line->channel;
 
-  if((AGS_MIXER_INPUT_LINE_MAPPED_RECALL & (mixer_input_line->flags)) == 0){
-    mixer_input_line->flags |= AGS_MIXER_INPUT_LINE_MAPPED_RECALL;
-
-    /* volume */
-    /* recall for channel->play */
-    play_volume_channel_container = ags_recall_container_new();
-    ags_channel_add_recall_container(source, (GObject *) play_volume_channel_container);
-
-    /* AgsVolumeChannel */
-    volume_channel = (AgsVolumeChannel *) g_object_new(AGS_TYPE_VOLUME_CHANNEL,
-						       "devout\0", audio->devout,
-						       "source\0", source,
-						       "recall_container\0", play_volume_channel_container,
-						       NULL);
-							      
-    AGS_RECALL(volume_channel)->flags |= (AGS_RECALL_TEMPLATE |
-					  AGS_RECALL_PLAYBACK |
-					  AGS_RECALL_PROPAGATE_DONE |
-					  AGS_RECALL_OUTPUT_ORIENTATED);
-    ags_channel_add_recall(source, (GObject *) volume_channel, TRUE);
-
-    /* AgsVolumeChannelRun */
-    volume_channel_run = (AgsVolumeChannelRun *) g_object_new(AGS_TYPE_VOLUME_CHANNEL_RUN,
-							      "devout\0", audio->devout,
-							      "recall_channel\0", volume_channel,
-							      "source\0", source,
-							      "recall_container\0", play_volume_channel_container,
-							      "volume\0", &(GTK_RANGE(mixer_input_line->volume)->adjustment->value),
-							      NULL);
-    
-    AGS_RECALL(volume_channel_run)->flags |= (AGS_RECALL_TEMPLATE |
-					      AGS_RECALL_PLAYBACK |
-					      AGS_RECALL_PROPAGATE_DONE |
-					      AGS_RECALL_OUTPUT_ORIENTATED);
-    ags_channel_add_recall(source, (GObject *) volume_channel_run, TRUE);
-
-    if(GTK_WIDGET_VISIBLE(mixer))
-      ags_connectable_connect(AGS_CONNECTABLE(volume_channel_run));
-  }
+  /* ags-volume */
+  ags_recall_factory_create(audio,
+			    NULL, NULL,
+			    "ags-volume\0",
+			    source->audio_channel, source->audio_channel + 1,
+			    source->pad, source->pad + 1,
+			    (AGS_RECALL_FACTORY_INPUT |
+			     AGS_RECALL_FACTORY_PLAY |
+			     AGS_RECALL_FACTORY_RECALL |
+			     AGS_RECALL_FACTORY_ADD),
+			    0);
 }
 
 AgsMixerInputLine*

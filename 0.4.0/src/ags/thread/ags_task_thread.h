@@ -23,6 +23,7 @@
 #include <glib-object.h>
 
 #include <ags/thread/ags_thread.h>
+#include <ags/thread/ags_thread_pool.h>
 
 #include <ags/audio/ags_task.h>
 
@@ -46,14 +47,13 @@ struct _AgsTaskThread
   pthread_mutex_t read_mutex;
   pthread_mutex_t launch_mutex;
 
-  GCond cond;
-  GMutex mutex;
-
   guint queued;
   guint pending;
 
   GList *exec;
   GList *queue;
+
+  AgsThreadPool *thread_pool;
 };
 
 struct _AgsTaskThreadClass

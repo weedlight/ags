@@ -17,14 +17,18 @@
  */
 
 #include <ags/audio/recall/ags_volume_audio_signal.h>
+#include <ags/audio/recall/ags_volume_channel.h>
+
+#include <ags-lib/object/ags_connectable.h>
+
+#include <ags/main.h>
 
 #include <ags/lib/ags_list.h>
 #include <ags/lib/ags_parameter.h>
 
-#include <ags-lib/object/ags_connectable.h>
 #include <ags/object/ags_dynamic_connectable.h>
 
-#include <ags/audio/recall/ags_volume_channel_run.h>
+#include <ags/audio/ags_recall_channel_run.h>
 
 void ags_volume_audio_signal_class_init(AgsVolumeAudioSignalClass *volume_audio_signal);
 void ags_volume_audio_signal_connectable_interface_init(AgsConnectableInterface *connectable);
@@ -147,7 +151,11 @@ ags_volume_audio_signal_dynamic_connectable_interface_init(AgsDynamicConnectable
 void
 ags_volume_audio_signal_init(AgsVolumeAudioSignal *volume_audio_signal)
 {
-  /* empty */
+  AGS_RECALL(volume_audio_signal)->name = "ags-volume\0";
+  AGS_RECALL(volume_audio_signal)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(volume_audio_signal)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(volume_audio_signal)->xml_type = "ags-volume-audio-signal\0";
+  AGS_RECALL(volume_audio_signal)->port = NULL;
 }
 
 void
@@ -206,18 +214,27 @@ ags_volume_audio_signal_run_inter(AgsRecall *recall)
 
   if(AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current != NULL){
     AgsDevout *devout;
-    AgsVolumeChannelRun *volume_channel_run;
+    AgsVolumeChannel *volume_channel;
     signed short *buffer;
+    gdouble volume;
     guint i;
+    GValue value = {0,};
+
+    return;
 
     devout = AGS_DEVOUT(AGS_RECALL_AUDIO_SIGNAL(recall)->source->devout);
 
-    volume_channel_run = AGS_VOLUME_CHANNEL_RUN(recall->parent->parent);
+    volume_channel = AGS_VOLUME_CHANNEL(AGS_RECALL_CHANNEL_RUN(recall->parent->parent)->recall_channel);
 
     buffer = (signed short *) AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current->data;
 
+    g_value_init(&value, G_TYPE_DOUBLE);
+    ags_port_safe_read(volume_channel->volume, &value);
+
+    volume = g_value_get_double(&value);
+
     for(i = 0; i < devout->buffer_size; i++){
-      buffer[i] = (signed short) ((0xffff) & (int)((gdouble)volume_channel_run->volume[0] * (gdouble)buffer[i]));
+      buffer[i] = (signed short) ((0xffff) & (int)((gdouble)volume * (gdouble)buffer[i]));
     }
   }else{
     ags_recall_done(recall);

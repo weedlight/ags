@@ -18,8 +18,14 @@
 
 #include <ags/X/ags_navigation_callbacks.h>
 
+#include <ags/main.h>
+
+#include <ags/thread/ags_audio_loop.h>
+#include <ags/thread/ags_task_thread.h>
+
 #include <ags/audio/task/ags_init_audio.h>
 #include <ags/audio/task/ags_append_audio.h>
+#include <ags/audio/task/ags_display_tact.h>
 #include <ags/audio/task/ags_cancel_audio.h>
 #include <ags/audio/task/ags_start_devout.h>
 
@@ -90,7 +96,7 @@ ags_navigation_bpm_callback(GtkWidget *widget,
   apply_bpm = ags_apply_bpm_new(G_OBJECT(window->devout),
 				navigation->bpm->adjustment->value);
 
-  ags_task_thread_append_task(AGS_DEVOUT(window->devout)->task_thread,
+  ags_task_thread_append_task(AGS_TASK_THREAD(AGS_AUDIO_LOOP(AGS_MAIN(window->ags_main)->main_loop)->task_thread),
 			      AGS_TASK(apply_bpm));
 }
 
@@ -141,8 +147,8 @@ ags_navigation_play_callback(GtkWidget *widget,
       list = g_list_prepend(list, init_audio);
     
       /* create append task */
-      append_audio = ags_append_audio_new(AGS_DEVOUT(machine->audio->devout)->audio_loop,
-					  machine->audio->devout_play);
+      append_audio = ags_append_audio_new(G_OBJECT(AGS_MAIN(window->ags_main)->main_loop),
+					  machine->audio);
       
       list = g_list_prepend(list, append_audio);
     }
@@ -157,7 +163,7 @@ ags_navigation_play_callback(GtkWidget *widget,
     list = g_list_reverse(list);
 
     /* append AgsStartDevout */
-    ags_task_thread_append_tasks(window->devout->task_thread,
+    ags_task_thread_append_tasks(AGS_TASK_THREAD(AGS_AUDIO_LOOP(AGS_MAIN(window->ags_main)->main_loop)->task_thread),
 				 list);
   }  
 }
@@ -193,57 +199,29 @@ ags_navigation_loop_callback(GtkWidget *widget,
 }
 
 void
-ags_navigation_position_sec_callback(GtkWidget *widget,
-				     AgsNavigation *navigation)
-{
-  /* empty */
-}
-
-void
-ags_navigation_position_min_callback(GtkWidget *widget,
-				     AgsNavigation *navigation)
-{
-  /* empty */
-}
-
-void
-ags_navigation_duration_sec_callback(GtkWidget *widget,
-				     AgsNavigation *navigation)
-{
-  /* empty */
-}
-
-void
-ags_navigation_duration_min_callback(GtkWidget *widget,
-				     AgsNavigation *navigation)
-{
-  /* empty */
-}
-
-void
-ags_navigation_loop_left_sec_callback(GtkWidget *widget,
+ags_navigation_position_tact_callback(GtkWidget *widget,
 				      AgsNavigation *navigation)
 {
   /* empty */
 }
 
 void
-ags_navigation_loop_left_min_callback(GtkWidget *widget,
+ags_navigation_duration_tact_callback(GtkWidget *widget,
 				      AgsNavigation *navigation)
 {
   /* empty */
 }
 
 void
-ags_navigation_loop_right_sec_callback(GtkWidget *widget,
+ags_navigation_loop_left_tact_callback(GtkWidget *widget,
 				       AgsNavigation *navigation)
 {
   /* empty */
 }
 
 void
-ags_navigation_loop_right_min_callback(GtkWidget *widget,
-				       AgsNavigation *navigation)
+ags_navigation_loop_right_tact_callback(GtkWidget *widget,
+					AgsNavigation *navigation)
 {
   /* empty */
 }
@@ -253,4 +231,17 @@ ags_navigation_raster_callback(GtkWidget *widget,
 			       AgsNavigation *navigation)
 {
   /* empty */
+}
+
+void
+ags_navigation_tic_callback(AgsDevout *devout,
+			    AgsNavigation *navigation)
+{
+  AgsTaskThread *task_thread;
+  AgsDisplayTact *display_tact;
+
+  task_thread = AGS_TASK_THREAD(AGS_AUDIO_LOOP(AGS_MAIN(devout->ags_main)->main_loop)->task_thread);
+
+  display_tact = ags_display_tact_new((GtkWidget *) navigation);
+  ags_task_thread_append_task(task_thread, AGS_TASK(display_tact));
 }

@@ -1,7 +1,7 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
-AC_PREREQ([2.68])
-AC_INIT([ags], [0.3.16-SNAPSHOT], [joel@weedlight.ch])
+AC_PREREQ([2.69])
+AC_INIT([ags],[0.3.16-SNAPSHOT],[joel@weedlight.ch])
 AM_INIT_AUTOMAKE([ags], [0.3.99-SNAPSHOT])
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_HEADERS([config.h])
@@ -9,6 +9,9 @@ AC_CONFIG_HEADERS([config.h])
 # Checks for programs.
 AC_PROG_CC
 AC_PROG_RANLIB
+LT_INIT
+
+#AGS_WITH_XMLRPC_C
 
 # Checks for libraries.
 # FIXME: Replace `main' with a function in `-ldl':
@@ -24,7 +27,7 @@ AC_CHECK_LIB([rt], [main])
 
 AC_CHECK_LIB([pthread], [pthread_suspend], AC_DEFINE([AGS_WITH_PTHREAD], [1], ["great!"]), AC_DEFINE([AGS_LINUX_SIGNALS], [1], ["YOUR CHANCE"]))
 
-PKG_CHECK_MODULES([UUID], [uuid >= 2.20.0])
+PKG_CHECK_MODULES([UUID], [uuid >= 1.0.2])
 AC_SUBST(UUID_CFLAGS)
 AC_SUBST(UUID_LIBS)
 
@@ -52,7 +55,7 @@ PKG_CHECK_MODULES([GOBJECT], [gobject-2.0 >= 2.32.3 glib-2.0 >= 2.32.3 gmodule-2
 AC_SUBST(GOBJECT_CFLAGS)
 AC_SUBST(GOBJECT_LIBS)
 
-PKG_CHECK_MODULES([GDKPIXBUF], [gdk-pixbuf-xlib-2.0 >= 2.26.1])
+PKG_CHECK_MODULES([GDKPIXBUF], [gdk-pixbuf-2.0 >= 2.26.1])
 AC_SUBST(GDKPIXBUF_CFLAGS)
 AC_SUBST(GDKPIXBUF_LIBS)
 
@@ -63,6 +66,22 @@ AC_SUBST(CAIRO_LIBS)
 PKG_CHECK_MODULES([GTK], [gtk+-2.0 >= 2.24.10])
 AC_SUBST(GTK_CFLAGS)
 AC_SUBST(GTK_LIBS)
+
+#PKG_CHECK_MODULES([XMLRPC_UTIL], [xmlrpc_util >= 1.16.33])
+#AC_SUBST(XMLRPC_UTIL_CFLAGS)
+#AC_SUBST(XMLRPC_UTIL_LIBS)
+
+#PKG_CHECK_MODULES([XMLRPC_SERVER], [xmlrpc_client >= 1.#16.33])
+#AC_SUBST(XMLRPC_SERVER_CFLAGS)
+#AC_SUBST(XMLRPC_SERVER_LIBS)
+
+#PKG_CHECK_MODULES([XMLRPC_SERVER_CGI], [xmlrpc_server_cgi >= 1.16.33])
+#AC_SUBST(XMLRPC_SERVER_CGI_CFLAGS)
+#AC_SUBST(XMLRPC_SERVER_CGI_LIBS)
+
+#PKG_CHECK_MODULES([XMLRPC_SERVER_ABYSS], [xmlrpc_server_abyss >= 1.16.33])
+#AC_SUBST(XMLRPC_SERVER_ABYSS_CFLAGS)
+#AC_SUBST(XMLRPC_SERVER_ABYSS_LIBS)
 
 # Checks for header files.
 AC_CHECK_HEADERS([fcntl.h stdlib.h string.h sys/ioctl.h unistd.h])

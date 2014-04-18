@@ -28,12 +28,6 @@
 #define AGS_IS_AUDIO_SIGNAL_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_AUDIO_SIGNAL))
 #define AGS_AUDIO_SIGNAL_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS ((obj), AGS_TYPE_AUDIO_SIGNAL, AgsAudioSignalClass))
 
-#define AGS_ATTACK_DEFAULT_JIFFIE (1.0 / AGS_ATTACK_DEFAULT_TACT)
-#define AGS_ATTACK_DEFAULT_TACT (exp2(-4))
-#define AGS_ATTACK_DEFAULT_DELAY ((double) AGS_DEVOUT_DEFAULT_SAMPLERATE /  \
-				  (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE *   \
-				  (double) AGS_ATTACK_DEFAULT_TACT)
-
 typedef struct _AgsAudioSignal AgsAudioSignal;
 typedef struct _AgsAudioSignalClass AgsAudioSignalClass;
 typedef struct _AgsAttack AgsAttack;
@@ -69,6 +63,11 @@ struct _AgsAudioSignal
   guint loop_start;
   guint loop_end;
 
+  guint delay;
+  guint attack;
+
+  guint lock_attack;
+  
   GList *stream_beginning;
   GList *stream_current;
   GList *stream_end;
@@ -82,25 +81,9 @@ struct _AgsAudioSignalClass
   void (*morph_samplerate)(AgsAudioSignal *audio_signal, guint samplerate, double k_morph);
 };
 
-struct _AgsAttack
-{
-  guint flags;
-
-  guint first_start;
-  guint first_length;
-
-  guint second_start;
-  guint second_length;
-};
-
 GType ags_audio_signal_get_type();
 
 signed short* ags_stream_alloc(guint buffer_size);
-
-AgsAttack* ags_attack_alloc(guint first_start, guint first_length,
-			    guint second_start, guint second_length);
-AgsAttack* ags_attack_duplicate(AgsAttack *attack);
-AgsAttack* ags_attack_duplicate_from_devout(GObject *devout);
 
 guint ags_audio_signal_get_length_till_current(AgsAudioSignal *audio_signal);
 
@@ -115,8 +98,7 @@ void ags_audio_signal_copy_buffer_to_buffer(signed short *destination, guint dch
 					    signed short *source, guint schannels, guint size);
 
 void ags_audio_signal_duplicate_stream(AgsAudioSignal *audio_signal,
-				       AgsAudioSignal *template,
-				       guint attack);
+				       AgsAudioSignal *template);
 
 //TODO:JK: rename these functions name it rather find than get
 AgsAudioSignal* ags_audio_signal_get_template(GList *audio_signal);

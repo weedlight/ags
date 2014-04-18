@@ -35,15 +35,9 @@
 typedef struct _AgsDrumOutputLine AgsDrumOutputLine;
 typedef struct _AgsDrumOutputLineClass AgsDrumOutputLineClass;
 
-typedef enum{
-  AGS_DRUM_OUTPUT_LINE_MAPPED_RECALL  =  1,
-}AgsDrumOutputLineFlags;
-
 struct _AgsDrumOutputLine
 {
   AgsLine line;
-
-  guint flags;
 };
 
 struct _AgsDrumOutputLineClass
@@ -53,7 +47,7 @@ struct _AgsDrumOutputLineClass
 
 GType ags_drum_output_line_get_type();
 
-void ags_drum_output_line_map_recall(AgsDrumOutputLine *drum_output_line);
+void ags_drum_output_line_add_default_recall(AgsDrumOutputLine *drum_output_line);
 
 AgsDrumOutputLine* ags_drum_output_line_new(AgsChannel *channel);
 

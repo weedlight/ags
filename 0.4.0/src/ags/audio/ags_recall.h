@@ -22,6 +22,7 @@
 #include <glib.h>
 #include <glib-object.h>
 
+#include <ags/audio/ags_port.h>
 #include <ags/audio/ags_recall_id.h>
 #include <ags/audio/ags_recall_dependency.h>
 
@@ -31,30 +32,39 @@
 #define AGS_IS_RECALL(obj)             (G_TYPE_CHECK_INSTANCE_TYPE((obj), AGS_TYPE_RECALL))
 #define AGS_IS_RECALL_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_RECALL))
 #define AGS_RECALL_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_RECALL, AgsRecallClass))
+
 #define AGS_RECALL_HANDLER(handler)    ((AgsRecallHandler *)(handler))
+
+#define AGS_RECALL_DEFAULT_VERSION "0.4.0-beta\0"
+#define AGS_RECALL_DEFAULT_BUILD_ID "0.4.0-beta\0"
 
 typedef struct _AgsRecall AgsRecall;
 typedef struct _AgsRecallClass AgsRecallClass;
 typedef struct _AgsRecallHandler AgsRecallHandler;
 
 typedef enum{
-  AGS_RECALL_CONNECTED          = 1,
-  AGS_RECALL_RUN_INITIALIZED    = 1 <<  1, //TODO:JK: rename to AGS_RECALL_RUN_CONNECTED
-  AGS_RECALL_TEMPLATE           = 1 <<  2, // if a sequencer's AgsOutput->recall is called all AgsRecalls with this flag has to be duplicated
-  AGS_RECALL_PLAYBACK           = 1 <<  3,
-  AGS_RECALL_SEQUENCER          = 1 <<  4,
-  AGS_RECALL_NOTATION           = 1 <<  5,
-  AGS_RECALL_DISTINCTS_REAL     = 1 <<  6,
-  AGS_RECALL_IS_REAL            = 1 <<  7,
-  AGS_RECALL_INPUT_ORIENTATED   = 1 <<  8,
-  AGS_RECALL_OUTPUT_ORIENTATED  = 1 <<  9,
-  AGS_RECALL_PERSISTENT         = 1 << 10,
-  AGS_RECALL_INITIAL_RUN        = 1 << 11,
-  AGS_RECALL_TERMINATING        = 1 << 12,
-  AGS_RECALL_DONE               = 1 << 13,
-  AGS_RECALL_REMOVE             = 1 << 14,
-  AGS_RECALL_HIDE               = 1 << 15,
-  AGS_RECALL_PROPAGATE_DONE     = 1 << 16, // see ags_recall_real_remove
+  AGS_RECALL_CONNECTED             = 1,
+  AGS_RECALL_RUN_INITIALIZED       = 1 <<  1, //TODO:JK: rename to AGS_RECALL_RUN_CONNECTED
+  AGS_RECALL_TEMPLATE              = 1 <<  2,
+  AGS_RECALL_PLAYBACK              = 1 <<  3,
+  AGS_RECALL_SEQUENCER             = 1 <<  4,
+  AGS_RECALL_NOTATION              = 1 <<  5,
+  AGS_RECALL_DEFAULT_TEMPLATE      = 1 <<  6,
+  //TODO:JK: remove because it's useless
+  //  AGS_RECALL_IS_REAL               = 1 <<  7,
+  AGS_RECALL_INPUT_ORIENTATED      = 1 <<  8,
+  AGS_RECALL_OUTPUT_ORIENTATED     = 1 <<  9,
+  AGS_RECALL_PERSISTENT            = 1 << 10,
+  AGS_RECALL_INITIAL_RUN           = 1 << 11,
+  AGS_RECALL_TERMINATING           = 1 << 12,
+  AGS_RECALL_DONE                  = 1 << 13,
+  AGS_RECALL_REMOVE                = 1 << 14,
+  AGS_RECALL_HIDE                  = 1 << 15,
+  AGS_RECALL_PROPAGATE_DONE        = 1 << 16, // see ags_recall_real_remove
+  AGS_RECALL_PERSISTENT_PLAYBACK   = 1 << 17,
+  AGS_RECALL_PERSISTENT_SEQUENCER  = 1 << 18,
+  AGS_RECALL_PERSISTENT_NOTATION   = 1 << 19,
+  AGS_RECALL_SKIP_DEPENDENCIES     = 1 << 20,
 }AgsRecallFlags;
 
 typedef enum{
@@ -75,7 +85,13 @@ struct _AgsRecall
   GObject *devout;
   GObject *container; // see AgsRecallContainer
 
-  char *name;
+  gchar *version;
+  gchar *build_id;
+
+  gchar *effect;
+  gchar *name;
+
+  gchar *xml_type;
 
   GList *dependencies;
 
@@ -86,7 +102,10 @@ struct _AgsRecall
 
   GType child_type;
   GParameter *child_parameters;
+  guint n_params;
 
+  GList *port;
+  
   GList *handlers;
 };
 
@@ -129,6 +148,8 @@ struct _AgsRecallHandler
 
 GType ags_recall_get_type();
 
+void ags_recall_set_flags(AgsRecall *recall, guint flags);
+
 void ags_recall_resolve_dependencies(AgsRecall *reall);
 
 void ags_recall_run_init_pre(AgsRecall *recall);
@@ -145,7 +166,7 @@ void ags_recall_done(AgsRecall *recall);
 void ags_recall_cancel(AgsRecall *recall);
 void ags_recall_remove(AgsRecall *recall);
 
-gboolean ags_recall_is_done(GList *recalls, AgsGroupId group_id);
+gboolean ags_recall_is_done(GList *recalls, GObject *recycling_container);
 
 AgsRecall* ags_recall_duplicate(AgsRecall *recall,
 				AgsRecallID *recall_id);
@@ -162,18 +183,17 @@ GList* ags_recall_get_dependencies(AgsRecall *recall);
 void ags_recall_add_child(AgsRecall *recall, AgsRecall *child);
 GList* ags_recall_get_children(AgsRecall *recall);
 
-void ags_recall_child_check_remove(AgsRecall *recall);
-
 void ags_recall_set_effect(AgsRecall *recall, char *effect);
 GList* ags_recall_find_by_effect(GList *list, AgsRecallID *recall_id, char *effect);
 
 GList* ags_recall_find_type(GList *recall, GType type);
 GList* ags_recall_find_template(GList *recall);
 GList* ags_recall_template_find_type(GList *recall, GType type);
-GList* ags_recall_find_type_with_group_id(GList *recall, GType type, AgsGroupId group_id);
-GList* ags_recall_find_group_id(GList *recall, AgsGroupId group_id);
+GList* ags_recall_find_type_with_recycling_container(GList *recall, GType type, GObject *recycling_container);
+GList* ags_recall_find_recycling_container(GList *recall, GObject *recycling_container);
 GList* ags_recall_find_provider(GList *recall, GObject *provider);
-GList* ags_recall_find_provider_with_group_id(GList *recall, GObject *provider, AgsGroupId group_id);
+GList* ags_recall_template_find_provider(GList *recall, GObject *provider);
+GList* ags_recall_find_provider_with_recycling_container(GList *recall, GObject *provider, GObject *recycling_container);
 
 void ags_recall_run_init(AgsRecall *recall, guint stage);
 
@@ -185,12 +205,6 @@ void ags_recall_add_handler(AgsRecall *recall,
 			    AgsRecallHandler *recall_handler);
 void ags_recall_remove_handler(AgsRecall *recall,
 			       AgsRecallHandler *recall_handler);
-
-
-AgsGroupId ags_recall_get_appropriate_group_id(AgsRecall *recall,
-					       GObject *audio,
-					       AgsRecallID *recall_id,
-					       gboolean called_by_output);
 
 AgsRecall* ags_recall_new();
 

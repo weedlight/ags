@@ -119,6 +119,8 @@ ags_pad_editor_class_init(AgsPadEditorClass *pad_editor)
 void
 ags_pad_editor_connectable_interface_init(AgsConnectableInterface *connectable)
 {
+  connectable->is_ready = NULL;
+  connectable->is_connected = NULL;
   connectable->connect = ags_pad_editor_connect;
   connectable->disconnect = ags_pad_editor_disconnect;
 }
@@ -134,6 +136,9 @@ ags_pad_editor_applicable_interface_init(AgsApplicableInterface *applicable)
 void
 ags_pad_editor_init(AgsPadEditor *pad_editor)
 {
+  pad_editor->version = AGS_PAD_EDITOR_DEFAULT_VERSION;
+  pad_editor->build_id = AGS_PAD_EDITOR_DEFAULT_BUILD_ID;
+
   pad_editor->line_editor_expander = (GtkExpander *) gtk_expander_new(NULL);
   gtk_box_pack_start(GTK_BOX(pad_editor),
 		     GTK_WIDGET(pad_editor->line_editor_expander),

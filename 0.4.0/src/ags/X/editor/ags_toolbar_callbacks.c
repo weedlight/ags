@@ -19,6 +19,7 @@
 #include <ags/X/editor/ags_toolbar_callbacks.h>
 
 #include <ags/X/ags_editor.h>
+#include <ags/X/editor/ags_note_edit.h>
 
 #include <libxml/tree.h>
 #include <libxml/xpath.h>
@@ -51,7 +52,7 @@ ags_toolbar_position_callback(GtkToggleButton *toggle_button, AgsToolbar *toolba
     gint width, height;
     
     /* refresh editor */
-    gtk_widget_get_size_request(GTK_WIDGET(editor->drawing_area),
+    gtk_widget_get_size_request(GTK_WIDGET(editor->note_edit->drawing_area),
 				&width,
 				&height);
     
@@ -61,10 +62,10 @@ ags_toolbar_position_callback(GtkToggleButton *toggle_button, AgsToolbar *toolba
     rectangle->width = width;
     rectangle->height = height;
     
-    gdk_window_invalidate_rect(GTK_WIDGET(editor->drawing_area)->window,
+    gdk_window_invalidate_rect(GTK_WIDGET(editor->note_edit->drawing_area)->window,
 			       rectangle,
 			       TRUE);
-    gdk_window_process_updates(GTK_WIDGET(editor->drawing_area)->window,
+    gdk_window_process_updates(GTK_WIDGET(editor->note_edit->drawing_area)->window,
 			       TRUE);
     
     g_free(rectangle);
@@ -80,10 +81,10 @@ ags_toolbar_position_callback(GtkToggleButton *toggle_button, AgsToolbar *toolba
     toolbar->selected_edit_mode = toggle_button;
     gtk_toggle_button_set_active(old_selected_edit_mode, FALSE);
 
-    /* refresh editor */
-    cr = gdk_cairo_create(GTK_WIDGET(editor->drawing_area)->window);
+    /* refresh note_edit */
+    cr = gdk_cairo_create(GTK_WIDGET(editor->note_edit->drawing_area)->window);
     
-    ags_editor_draw_position(editor, cr);
+    ags_note_edit_draw_position(editor->note_edit, cr);
   }
 }
 
@@ -163,8 +164,10 @@ ags_toolbar_copy_or_cut_callback(GtkWidget *widget, AgsToolbar *toolbar)
     list_notation = machine->audio->notation;
 
     if(gtk_option_menu_get_history(toolbar->mode) == 0){
-      if(gtk_notebook_get_n_pages((GtkNotebook *) editor->notebook) > 0){
-	list_notation = g_list_nth(list_notation, gtk_notebook_get_current_page((GtkNotebook *) editor->notebook));
+      if(editor->notebook->tabs != NULL){
+	list_notation = g_list_nth(list_notation,
+				   ags_notebook_next_active_tab(editor->notebook,
+								0));
 
 	if(widget == (GtkWidget *) toolbar->copy)
 	  notation_node = ags_notation_copy_selection(AGS_NOTATION(list_notation->data));
@@ -263,8 +266,8 @@ ags_toolbar_paste_callback(GtkWidget *widget, AgsToolbar *toolbar)
     if(toolbar->selected_edit_mode == toolbar->position){
       paste_from_position = TRUE;
 
-      position_x = editor->selected_x;
-      position_y = editor->selected_y;
+      position_x = editor->note_edit->selected_x;
+      position_y = editor->note_edit->selected_y;
 
       printf("pasting at position: [%u,%u]\n\0", position_x, position_y);
     }else{
@@ -305,10 +308,10 @@ ags_toolbar_zoom_callback(GtkOptionMenu *option, AgsToolbar *toolbar)
 
   editor = (AgsEditor *) gtk_widget_get_ancestor((GtkWidget *) toolbar, AGS_TYPE_EDITOR);
 
-  editor->flags |= AGS_EDITOR_RESETING_HORIZONTALLY;
-  ags_editor_reset_horizontally(editor, AGS_EDITOR_RESET_HSCROLLBAR |
-				AGS_EDITOR_RESET_WIDTH);
-  editor->flags &= (~AGS_EDITOR_RESETING_HORIZONTALLY);
+  editor->note_edit->flags |= AGS_NOTE_EDIT_RESETING_HORIZONTALLY;
+  ags_note_edit_reset_horizontally(editor->note_edit, AGS_NOTE_EDIT_RESET_HSCROLLBAR |
+				   AGS_NOTE_EDIT_RESET_WIDTH);
+  editor->note_edit->flags &= (~AGS_NOTE_EDIT_RESETING_HORIZONTALLY);
 }
 
 void
@@ -321,7 +324,7 @@ ags_toolbar_tact_callback(GtkOptionMenu *option, AgsToolbar *toolbar)
   guint history;
 
   editor = (AgsEditor *) gtk_widget_get_ancestor((GtkWidget *) toolbar, AGS_TYPE_EDITOR);
-  widget = (GtkWidget *) editor->drawing_area;
+  widget = (GtkWidget *) editor->note_edit->drawing_area;
 
   history = gtk_option_menu_get_history(option);
 
@@ -330,19 +333,67 @@ ags_toolbar_tact_callback(GtkOptionMenu *option, AgsToolbar *toolbar)
 
   toolbar->tact_history = history;
 
-  editor->flags |= AGS_EDITOR_RESETING_HORIZONTALLY;
-  ags_editor_reset_horizontally(editor, AGS_EDITOR_RESET_HSCROLLBAR |
-				AGS_EDITOR_RESET_WIDTH);
-  editor->flags &= (~AGS_EDITOR_RESETING_HORIZONTALLY);
+  editor->note_edit->flags |= AGS_NOTE_EDIT_RESETING_HORIZONTALLY;
+  ags_note_edit_reset_horizontally(editor->note_edit, AGS_NOTE_EDIT_RESET_HSCROLLBAR |
+				   AGS_NOTE_EDIT_RESET_WIDTH);
+  editor->note_edit->flags &= (~AGS_NOTE_EDIT_RESETING_HORIZONTALLY);
 }
 
 void
-ags_toolbar_mode_default_callback(GtkWidget *widget, AgsToolbar *toolbar)
+ags_toolbar_mode_callback(GtkWidget *widget, AgsToolbar *toolbar)
 {
-}
+  AgsEditor *editor;
+  AgsNotebook *notebook;
+  GList *list;
+  gint history;
 
-void
-ags_toolbar_mode_group_channels_callback(GtkWidget *widget, AgsToolbar *toolbar)
-{
-}
+  /* retrieve some variables */
+  editor = (AgsEditor *) gtk_widget_get_ancestor(GTK_WIDGET(toolbar),
+						 AGS_TYPE_EDITOR);
 
+  notebook = editor->notebook;
+
+  /* toggle AgsNotebook */
+  history = gtk_option_menu_get_history(toolbar->mode);
+
+  switch(history){
+  case 0:
+    {
+      list = g_list_reverse(notebook->tabs);
+
+      if(list != NULL){
+	gtk_toggle_button_set_active(AGS_NOTEBOOK_TAB(list->data)->toggle,
+				     TRUE);
+
+	list = list->next;
+      }
+
+      while(list != NULL){
+	gtk_toggle_button_set_active(AGS_NOTEBOOK_TAB(list->data)->toggle,
+				     FALSE);	
+
+	list = list->next;
+      }
+    }
+    break;
+  case 1:
+    {
+      //NOTE: you're on your own
+    }
+    break;
+  case 2:
+    {
+      list = g_list_reverse(notebook->tabs);
+
+      while(list != NULL){
+	gtk_toggle_button_set_active(AGS_NOTEBOOK_TAB(list->data)->toggle,
+				     TRUE);
+
+	list = list->next;
+      }
+    }
+    break;
+  default:
+    g_message("unknown editor mode\0");
+  }
+}

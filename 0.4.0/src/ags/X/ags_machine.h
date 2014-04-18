@@ -25,14 +25,15 @@
 
 #include <ags/audio/ags_audio.h>
 
-#include <ags/file/ags_file.h>
-
 #define AGS_TYPE_MACHINE                (ags_machine_get_type())
 #define AGS_MACHINE(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_MACHINE, AgsMachine))
 #define AGS_MACHINE_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST((class), AGS_TYPE_MACHINE, AgsMachineClass))
 #define AGS_IS_MACHINE(obj)             (G_TYPE_CHECK_INSTANCE_TYPE((obj), AGS_TYPE_MACHINE))
 #define AGS_IS_MACHINE_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_MACHINE))
 #define AGS_MACHINE_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_MACHINE, AgsMachineClass))
+
+#define AGS_MACHINE_DEFAULT_VERSION "0.4.0-beta\0"
+#define AGS_MACHINE_DEFAULT_BUILD_ID "0.4.0-beta\0"
 
 typedef struct _AgsMachine AgsMachine;
 typedef struct _AgsMachineClass AgsMachineClass;
@@ -43,6 +44,8 @@ typedef enum{
   AGS_MACHINE_IS_SEQUENCER      = 1 <<  2,
   AGS_MACHINE_IS_SYNTHESIZER    = 1 <<  3,
   AGS_MACHINE_TAKES_FILE_INPUT  = 1 <<  4,
+  AGS_MACHINE_MAPPED_RECALL     = 1 <<  5,
+  AGS_MACHINE_PREMAPPED_RECALL  = 1 <<  5,
 }AgsMachineFlags;
 
 typedef enum{
@@ -55,6 +58,13 @@ struct _AgsMachine
 {
   GtkHandleBox handle_box;
 
+  GObject *ags_main;
+
+  gchar *version;
+  gchar *build_id;
+
+  gchar *xml_type;
+
   guint flags;
   guint file_input_flags;
 
@@ -62,8 +72,15 @@ struct _AgsMachine
 
   AgsAudio *audio;
 
+  GType output_pad_type;
+  GType output_line_type;
   GtkContainer *output;
+
+  GType input_pad_type;
+  GType input_line_type;
   GtkContainer *input;
+
+  GList *port;
 
   GtkMenu *popup;
   GtkDialog *properties;
@@ -73,9 +90,13 @@ struct _AgsMachine
 struct _AgsMachineClass
 {
   GtkHandleBoxClass handle_box;
+
+  void (*add_default_recalls)(AgsMachine *machine);
 };
 
 GType ags_machine_get_type(void);
+
+void ags_machine_add_default_recalls(AgsMachine *machine);
 
 GtkListStore* ags_machine_get_possible_links(AgsMachine *machine);
 

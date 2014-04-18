@@ -26,6 +26,8 @@
 
 #include <ags/object/ags_main_loop.h>
 
+#include <ags/file/ags_file.h>
+
 #include <ags/thread/ags_audio_loop.h>
 #include <ags/thread/ags_gui_thread.h>
 #include <ags/thread/ags_single_thread.h>
@@ -43,11 +45,13 @@
 #include <libintl.h>
 #include <stdio.h>
 
+#include <X11/Xlib.h>
+
 #include "config.h"
 
-void ags_main_class_init(AgsMainClass *main);
+void ags_main_class_init(AgsMainClass *ags_main);
 void ags_main_connectable_interface_init(AgsConnectableInterface *connectable);
-void ags_main_init(AgsMain *main);
+void ags_main_init(AgsMain *ags_main);
 void ags_main_connect(AgsConnectable *connectable);
 void ags_main_disconnect(AgsConnectable *connectable);
 void ags_main_finalize(GObject *gobject);
@@ -55,6 +59,10 @@ void ags_main_finalize(GObject *gobject);
 void ags_colors_alloc();
 
 static gpointer ags_main_parent_class = NULL;
+static sigset_t ags_wait_mask;
+
+extern void ags_thread_resume_handler(int sig);
+extern void ags_thread_suspend_handler(int sig);
 
 extern GtkStyle *matrix_style;
 extern GtkStyle *ffplayer_style;
@@ -62,6 +70,7 @@ extern GtkStyle *editor_style;
 extern GtkStyle *notebook_style;
 extern GtkStyle *ruler_style;
 extern GtkStyle *meter_style;
+extern GtkStyle *note_edit_style;
 
 GType
 ags_main_get_type()
@@ -101,14 +110,14 @@ ags_main_get_type()
 }
 
 void
-ags_main_class_init(AgsMainClass *main)
+ags_main_class_init(AgsMainClass *ags_main)
 {
   GObjectClass *gobject;
 
-  ags_main_parent_class = g_type_class_peek_parent(main);
+  ags_main_parent_class = g_type_class_peek_parent(ags_main);
 
   /* GObjectClass */
-  gobject = (GObjectClass *) main;
+  gobject = (GObjectClass *) ags_main;
 
   gobject->finalize = ags_main_finalize;
 }
@@ -121,20 +130,71 @@ ags_main_connectable_interface_init(AgsConnectableInterface *connectable)
 }
 
 void
-ags_main_init(AgsMain *main)
+ags_main_init(AgsMain *ags_main)
 {
-  main->log = (AgsLog *) g_object_new(AGS_TYPE_LOG,
-				      "file\0", stdout,
-				      NULL);
+  struct sigaction sa;
+
+  ags_main->flags = 0;
+
+  ags_main->version = AGS_VERSION;
+  ags_main->build_id = AGS_BUILD_ID;
+
+  ags_main->log = (AgsLog *) g_object_new(AGS_TYPE_LOG,
+					  "file\0", stdout,
+					  NULL);
   ags_colors_alloc();
 
+  ags_main->main_loop = NULL;
+  ags_main->thread_pool = ags_thread_pool_new(NULL);
+  ags_main->server = NULL;
+  ags_main->devout = NULL;
+  ags_main->window = NULL;
   // ags_log_message(ags_default_log, "starting Advanced Gtk+ Sequencer\n\0");
+
+  sigfillset(&(ags_wait_mask));
+  sigdelset(&(ags_wait_mask), AGS_THREAD_SUSPEND_SIG);
+  sigdelset(&(ags_wait_mask), AGS_THREAD_RESUME_SIG);
+
+  sigfillset(&(sa.sa_mask));
+  sa.sa_flags = 0;
+
+  sa.sa_handler = ags_thread_resume_handler;
+  sigaction(AGS_THREAD_RESUME_SIG, &sa, NULL);
+
+  sa.sa_handler = ags_thread_suspend_handler;
+  sigaction(AGS_THREAD_SUSPEND_SIG, &sa, NULL);
 }
 
 void
 ags_main_connect(AgsConnectable *connectable)
 {
-  /* empty */
+  AgsMain *ags_main;
+  GList *list;
+
+  ags_main = AGS_MAIN(connectable);
+
+  if((AGS_MAIN_CONNECTED & (ags_main->flags)) != 0)
+    return;
+
+  ags_main->flags |= AGS_MAIN_CONNECTED;
+
+  ags_connectable_connect(AGS_CONNECTABLE(ags_main->main_loop));
+  ags_connectable_connect(AGS_CONNECTABLE(ags_main->thread_pool));
+
+  g_message("connected threads\0");
+
+  list = ags_main->devout;
+
+  while(list != NULL){
+    ags_connectable_connect(AGS_CONNECTABLE(list->data));
+
+    list = list->next;
+  }
+
+  g_message("connected audio\0");
+
+  ags_connectable_connect(AGS_CONNECTABLE(ags_main->window));
+  g_message("connected gui\0");
 }
 
 void
@@ -146,9 +206,9 @@ ags_main_disconnect(AgsConnectable *connectable)
 void
 ags_main_finalize(GObject *gobject)
 {
-  AgsMain *main;
+  AgsMain *ags_main;
 
-  main = AGS_MAIN(gobject);
+  ags_main = AGS_MAIN(gobject);
 
   G_OBJECT_CLASS(ags_main_parent_class)->finalize(gobject);
 }
@@ -350,134 +410,301 @@ ags_colors_alloc()
     meter_style->base[0].green = 0 *(65535/255);
     meter_style->base[0].blue = 0 * (65535/255);
     meter_style->base[0].pixel = (gulong)(0*65536 + 0*256 + 0);
+
+
+    /* note_edit style */
+    note_edit_style = gtk_style_new();
+    note_edit_style->fg[0].red = 255 * (65535/255);
+    note_edit_style->fg[0].green = 240 *(65535/255);
+    note_edit_style->fg[0].blue = 200 * (65535/255);
+    note_edit_style->fg[0].pixel = (gulong)(255*65536 + 240*256 + 200);
+
+    note_edit_style->bg[0].red = 255 * (65535/255);
+    note_edit_style->bg[0].green = 255 *(65535/255);
+    note_edit_style->bg[0].blue = 100 * (65535/255);
+    note_edit_style->bg[0].pixel = (gulong)(255*65536 + 255*256 + 255);
+
+    note_edit_style->mid[0].red = 250 * (65535/255);
+    note_edit_style->mid[0].green = 0 *(65535/255);
+    note_edit_style->mid[0].blue = 250 * (65535/255);
+    note_edit_style->mid[0].pixel = (gulong)(150*65536 + 150*256 + 250);
+
+
+    note_edit_style->base[0].red = 250 * (65535/255);
+    note_edit_style->base[0].green = 250 *(65535/255);
+    note_edit_style->base[0].blue = 250 * (65535/255);
+    note_edit_style->base[0].pixel = (gulong)(250*65536 + 250*256 + 250);
   }
 }
 
 void
-ags_main_quit(AgsMain *main)
+ags_main_add_devout(AgsMain *ags_main,
+		    AgsDevout *devout)
 {
-  ags_thread_stop(main->gui_loop);
+  if(devout == NULL){
+    return;
+  }
+
+  g_object_ref(G_OBJECT(devout));
+  ags_main->devout = g_list_prepend(ags_main->devout,
+				    devout);
+}
+
+void
+ags_main_register_recall_type()
+{
+  ags_play_audio_get_type();
+  ags_play_channel_get_type();
+  ags_play_channel_run_get_type();
+  ags_play_channel_run_master_get_type();
+
+  ags_stream_channel_get_type();
+  ags_stream_channel_run_get_type();
+
+  ags_loop_channel_get_type();
+  ags_loop_channel_run_get_type();
+
+  ags_copy_channel_get_type();
+  ags_copy_channel_run_get_type();
+
+  ags_volume_channel_get_type();
+  ags_volume_channel_run_get_type();
+
+  ags_delay_audio_get_type();
+  ags_delay_audio_run_get_type();
+
+  ags_count_beats_audio_get_type();
+  ags_count_beats_audio_run_get_type();
+
+  ags_copy_pattern_audio_get_type();
+  ags_copy_pattern_audio_run_get_type();
+  ags_copy_pattern_channel_get_type();
+  ags_copy_pattern_channel_run_get_type();
+
+  ags_buffer_channel_get_type();
+  ags_buffer_channel_run_get_type();
+}
+
+void
+ags_main_register_task_type()
+{
+  //TODO:JK: implement me
+}
+
+void
+ags_main_register_widget_type()
+{
+  ags_dial_get_type();
+}
+
+void
+ags_main_register_machine_type()
+{
+  ags_panel_get_type();
+  ags_panel_input_pad_get_type();
+  ags_panel_input_line_get_type();
+
+  ags_mixer_get_type();
+  ags_mixer_input_pad_get_type();
+  ags_mixer_input_line_get_type();
+
+  ags_drum_get_type();
+  ags_drum_output_pad_get_type();
+  ags_drum_output_line_get_type();
+  ags_drum_input_pad_get_type();
+  ags_drum_input_line_get_type();
+
+  ags_matrix_get_type();
+
+  ags_synth_get_type();
+}
+
+void
+ags_main_register_thread_type()
+{
+  ags_thread_get_type();
+
+  ags_audio_loop_get_type();
+  ags_task_thread_get_type();
+  ags_devout_thread_get_type();
+  ags_iterator_thread_get_type();
+  ags_recycling_thread_get_type();
+  ags_timestamp_thread_get_type();
+  ags_gui_thread_get_type();
+
+  ags_thread_pool_get_type();
+  ags_returnable_thread_get_type();
+}
+
+void
+ags_main_quit(AgsMain *ags_main)
+{
+  ags_thread_stop(AGS_AUDIO_LOOP(ags_main->main_loop)->gui_thread);
 }
 
 AgsMain*
 ags_main_new()
 {
-  AgsMain *main;
+  AgsMain *ags_main;
 
-  main = (AgsMain *) g_object_new(AGS_TYPE_MAIN,
-				  NULL);
+  ags_main = (AgsMain *) g_object_new(AGS_TYPE_MAIN,
+				      NULL);
 
-  return(main);
+  return(ags_main);
 }
 
 int
 main(int argc, char **argv)
 {
-  AgsMain *main;
+  AgsMain *ags_main;
   AgsDevout *devout;
   AgsWindow *window;
   AgsGuiThread *gui_thread;
-  struct sched_param param;
+  gchar *filename;
+  //  struct sched_param param;
   const char *error;
   gboolean single_thread = FALSE;
   guint i;
 
-  for(i = 0; i < argc; i++){
-    if(!strncmp(argv[i], "--single-thread\0", 16)){
-      single_thread = TRUE;
-    }
-  }
-
-  /* Declare ourself as a real time task */
-  param.sched_priority = AGS_PRIORITY;
-
-  if(sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
-    perror("sched_setscheduler failed\0");
-  }
-
-  mlockall(MCL_CURRENT | MCL_FUTURE);
-
   LIBXML_TEST_VERSION;
+
+  XInitThreads();
+
+  g_thread_init(NULL);
+  gdk_threads_init();
+
+  //  gdk_threads_enter();
 
   gtk_init(&argc, &argv);
   ipatch_init();
 
-  if(!single_thread){
-    main = ags_main_new();
+  ao_initialize();
 
-    devout = ags_devout_new(main);
-    main->devout = devout; //TODO:JK: really ugly
-    main->devout->main = main; //TODO:JK: really ugly
+  filename = NULL;
 
-    /* threads */
-    devout->audio_loop = ags_audio_loop_new(G_OBJECT(devout), G_OBJECT(main));
-    devout->task_thread = AGS_TASK_THREAD(devout->audio_loop->task_thread);
-    devout->devout_thread = AGS_DEVOUT_THREAD(devout->audio_loop->devout_thread);
+  for(i = 0; i < argc; i++){
+    if(!strncmp(argv[i], "--single-thread\0", 16)){
+      single_thread = TRUE;
+    }else if(!strncmp(argv[i], "--filename\0", 11)){
+      filename = argv[i + 1];
+      i++;
+    }
+  }
 
-    /* AgsWindow */
-    window = ags_window_new(main);
-    window->devout = devout; //TODO:JK: really ugly
+  if(filename != NULL){
+    AgsFile *file;
 
-    gtk_window_set_default_size((GtkWindow *) window, 500, 500);
-    gtk_paned_set_position((GtkPaned *) window->paned, 300);
+    file = g_object_new(AGS_TYPE_FILE,
+			"filename\0", filename,
+			NULL);
+    ags_file_read(file);
 
-    ags_connectable_connect(window);
-    gtk_widget_show_all((GtkWidget *) window);
+    ags_main = AGS_MAIN(file->ags_main);
 
-    /* AgsMainLoop */
-    main->main_loop = window->devout->audio_loop;
-    g_object_set(G_OBJECT(main->main_loop),
-		 "devout\0", main->devout,
+#ifdef _USE_PTH
+    pth_join(AGS_AUDIO_LOOP(ags_main->main_loop)->gui_thread->thread,
+	     NULL);
+#else
+    g_message("joining\0");
+    pthread_join(AGS_AUDIO_LOOP(ags_main->main_loop)->gui_thread->thread,
 		 NULL);
-
-    ags_thread_start(main->main_loop);
-
-    //TODO:JK: really ugly
-    AGS_AUDIO_LOOP(main->main_loop)->main = main;
-
-    /*  */
-    main->gui_loop = AGS_AUDIO_LOOP(main->main_loop)->gui_thread;
-
-    ags_thread_start(main->gui_loop);
-
-    pthread_join(main->gui_loop->thread,
-		 NULL);
+    g_message("done\0");
+#endif
   }else{
-    AgsSingleThread *single_thread;
+    ags_main = ags_main_new();
 
-    main = ags_main_new();
+    if(single_thread){
+      ags_main->flags = AGS_MAIN_SINGLE_THREAD;
+    }
 
-    devout = ags_devout_new(main);
-    main->devout = devout; //TODO:JK: really ugly
-    main->devout->main = main; //TODO:JK: really ugly
 
-    /* threads */
-    single_thread = ags_single_thread_new(devout);
-    devout->audio_loop = single_thread->audio_loop;
-    devout->audio_loop->main = main; //TODO:JK: really ugly
-    devout->task_thread = single_thread->task_thread;
-    devout->devout_thread = single_thread->devout_thread;
+    /* Declare ourself as a real time task */
+    //    param.sched_priority = AGS_PRIORITY;
 
-    /* AgsWindow */
-    window = ags_window_new(main);
-    window->devout = devout; //TODO:JK: really ugly
+    //    if(sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+    //      perror("sched_setscheduler failed\0");
+    //    }
 
-    gtk_window_set_default_size((GtkWindow *) window, 500, 500);
-    gtk_paned_set_position((GtkPaned *) window->paned, 300);
+    //    mlockall(MCL_CURRENT | MCL_FUTURE);
 
-    ags_connectable_connect(window);
-    gtk_widget_show_all((GtkWidget *) window);
+    if((AGS_MAIN_SINGLE_THREAD & (ags_main->flags)) == 0){
+#ifdef AGS_WITH_XMLRPC_C
+      AbyssInit(&error);
 
-    /* AgsMainLoop */
-    main->main_loop = window->devout->audio_loop;
-    g_object_set(G_OBJECT(main->main_loop),
-		 "devout\0", main->devout,
-		 NULL);
+      xmlrpc_env_init(&(ags_main->env));
+#endif /* AGS_WITH_XMLRPC_C */
 
-    /*  */
-    main->gui_loop = AGS_AUDIO_LOOP(main->main_loop)->gui_thread;
+      /* AgsDevout */
+      devout = ags_devout_new((GObject *) ags_main);
+      ags_main_add_devout(ags_main,
+			  devout);
 
-    ags_thread_start(single_thread);
+      /* AgsWindow */
+      ags_main->window =
+	window = ags_window_new((GObject *) ags_main);
+      g_object_set(G_OBJECT(window),
+		   "devout\0", devout,
+		   NULL);
+      g_object_ref(G_OBJECT(window));
+
+      gtk_window_set_default_size((GtkWindow *) window, 500, 500);
+      gtk_paned_set_position((GtkPaned *) window->paned, 300);
+
+      ags_connectable_connect(window);
+      gtk_widget_show_all((GtkWidget *) window);
+
+      /* AgsServer */
+      ags_main->server = ags_server_new((GObject *) ags_main);
+
+      /* AgsAgs_MainLoop */
+      ags_main->main_loop = AGS_MAIN_LOOP(ags_audio_loop_new((GObject *) devout, (GObject *) ags_main));
+      g_object_ref(G_OBJECT(ags_main->main_loop));
+
+      ags_connectable_connect(AGS_CONNECTABLE(ags_main->main_loop));
+
+      ags_thread_start(ags_main->main_loop);
+    }else{
+      AgsSingleThread *single_thread;
+
+      devout = ags_devout_new((GObject *) ags_main);
+      ags_main_add_devout(ags_main,
+			  devout);
+
+      /* threads */
+      single_thread = ags_single_thread_new((GObject *) devout);
+
+      /* AgsWindow */
+      ags_main->window = 
+	window = ags_window_new((GObject *) ags_main);
+      g_object_set(G_OBJECT(window),
+		   "devout\0", devout,
+		   NULL);
+
+      gtk_window_set_default_size((GtkWindow *) window, 500, 500);
+      gtk_paned_set_position((GtkPaned *) window->paned, 300);
+
+      ags_connectable_connect(window);
+      gtk_widget_show_all((GtkWidget *) window);
+
+      /* AgsMainLoop */
+      ags_main->main_loop = AGS_MAIN_LOOP(ags_audio_loop_new((GObject *) devout, (GObject *) ags_main));
+      g_object_ref(G_OBJECT(ags_main->main_loop));
+    
+      ags_thread_start((AgsThread *) single_thread);
+    }
+
+    //  gdk_threads_leave();
+
+    if(!single_thread){
+      /* join gui thread */
+#ifdef _USE_PTH
+      pth_join(AGS_AUDIO_LOOP(ags_main->main_loop)->gui_thread->thread,
+	       NULL);
+#else
+      pthread_join(AGS_AUDIO_LOOP(ags_main->main_loop)->gui_thread->thread,
+		   NULL);
+#endif
+    }
   }
 
   return(0);

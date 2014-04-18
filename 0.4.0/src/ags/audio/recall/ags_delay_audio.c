@@ -19,12 +19,16 @@
 #include <ags/audio/recall/ags_delay_audio.h>
 #include <ags/audio/recall/ags_delay_audio_run.h>
 
+#include <ags/main.h>
+
 #include <ags/object/ags_tactable.h>
+#include <ags/object/ags_plugin.h>
 
 #include <ags/audio/ags_devout.h>
 
 void ags_delay_audio_class_init(AgsDelayAudioClass *delay_audio);
 void ags_delay_audio_tactable_interface_init(AgsTactableInterface *tactable);
+void ags_delay_audio_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_delay_audio_init(AgsDelayAudio *delay_audio);
 void ags_delay_audio_set_property(GObject *gobject,
 				  guint prop_id,
@@ -34,6 +38,7 @@ void ags_delay_audio_get_property(GObject *gobject,
 				  guint prop_id,
 				  GValue *value,
 				  GParamSpec *param_spec);
+void ags_delay_audio_set_ports(AgsPlugin *plugin, GList *port);
 void ags_delay_audio_finalize(GObject *gobject);
 
 void ags_delay_audio_change_bpm(AgsTactable *tactable, gdouble bpm);
@@ -42,6 +47,7 @@ void ags_delay_audio_change_sequencer_duration(AgsTactable *tactable, gdouble du
 void ags_delay_audio_change_notation_duration(AgsTactable *tactable, gdouble duration);
 
 enum{
+  NOTATION_DURATION_CHANGED,
   SEQUENCER_DURATION_CHANGED,
   LAST_SIGNAL,
 };
@@ -50,11 +56,33 @@ enum{
   PROP_0,
   PROP_NOTATION_DELAY,
   PROP_SEQUENCER_DELAY,
+  PROP_TACT,
+  PROP_BPM,
+  PROP_SEQUENCER_DURATION,
+  PROP_NOTATION_DURATION,
 };
 
 static gpointer ags_delay_audio_parent_class = NULL;
 
 static guint delay_audio_signals[LAST_SIGNAL];
+
+static const gchar *ags_delay_audio_plugin_name = "ags-delay\0";
+static const gchar *ags_delay_audio_specifier[] = {
+  "./bpm[0]\0",
+  "./tact[0]\0",
+  "./sequencer_delay[0]\0",
+  "./notation_delay[0]\0",
+  "./sequencer_duration[0]\0",
+  "./notation_duration[0]\0"
+};
+static const gchar *ags_delay_audio_control_port[] = {
+  "1/6\0",
+  "2/6\0",
+  "3/6\0",
+  "4/6\0",
+  "5/6\0",
+  "6/6\0",
+};
 
 GType
 ags_delay_audio_get_type()
@@ -80,6 +108,12 @@ ags_delay_audio_get_type()
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_delay_audio_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
     ags_type_delay_audio = g_type_register_static(AGS_TYPE_RECALL_AUDIO,
 						  "AgsDelayAudio\0",
 						  &ags_delay_audio_info,
@@ -88,6 +122,10 @@ ags_delay_audio_get_type()
     g_type_add_interface_static(ags_type_delay_audio,
 				AGS_TYPE_TACTABLE,
 				&ags_tactable_interface_info);
+
+    g_type_add_interface_static(ags_type_delay_audio,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_delay_audio);
@@ -110,31 +148,73 @@ ags_delay_audio_class_init(AgsDelayAudioClass *delay_audio)
   gobject->finalize = ags_delay_audio_finalize;
 
   /* properties */
-  param_spec = g_param_spec_uint("notation_delay\0",
-				 "notation delay for timeing\0",
-				 "The notation delay whenever a tic occures\0",
-				 0,
-				 65535,
-				 AGS_AUDIO_LOOP_DEFAULT_JIFFIE / 64.0,
-				 G_PARAM_READABLE);
+  param_spec = g_param_spec_object("bpm\0",
+				   "bpm of recall\0",
+				   "The recall's bpm\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
-				  PROP_NOTATION_DELAY,
+				  PROP_BPM,
 				  param_spec);
 
-  param_spec = g_param_spec_uint("sequencer_delay\0",
-				 "sequencer delay for timeing\0",
-				 "The sequencer delay whenever a tic occures\0",
-				 0,
-				 AGS_DEVOUT_DEFAULT_BUFFER_SIZE,
-				 AGS_AUDIO_LOOP_DEFAULT_JIFFIE * exp2(-2.0),
-				 G_PARAM_READABLE | G_PARAM_WRITABLE);
+  param_spec = g_param_spec_object("tact\0",
+				   "tact of recall\0",
+				   "The recall's tact\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_TACT,
+				  param_spec);
+
+  param_spec = g_param_spec_object("sequencer-delay\0",
+				   "sequencer-delay of recall\0",
+				   "The delay of the sequencer\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
 				  PROP_SEQUENCER_DELAY,
 				  param_spec);
 
+  param_spec = g_param_spec_object("notation-delay\0",
+				   "notation-delay of recall\0",
+				   "The delay of the notation\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_NOTATION_DELAY,
+				  param_spec);
+
+  param_spec = g_param_spec_object("sequencer-duration\0",
+				   "sequencer-duration of recall\0",
+				   "The duration of the sequencer\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_SEQUENCER_DURATION,
+				  param_spec);
+
+  param_spec = g_param_spec_object("notation-duration\0",
+				   "notation-duration of recall\0",
+				   "The duration of the notation\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_NOTATION_DURATION,
+				  param_spec);
+
+
   /* signals */
+  delay_audio_signals[NOTATION_DURATION_CHANGED] = 
+    g_signal_new("notation-duration-changed\0",
+		 G_TYPE_FROM_CLASS(delay_audio),
+		 G_SIGNAL_RUN_LAST,
+		 G_STRUCT_OFFSET(AgsDelayAudioClass, notation_duration_changed),
+		 NULL, NULL,
+		 g_cclosure_marshal_VOID__VOID,
+		 G_TYPE_NONE, 0);
+
   delay_audio_signals[SEQUENCER_DURATION_CHANGED] = 
-    g_signal_new("sequencer_duration_changed\0",
+    g_signal_new("sequencer-duration-changed\0",
 		 G_TYPE_FROM_CLASS(delay_audio),
 		 G_SIGNAL_RUN_LAST,
 		 G_STRUCT_OFFSET(AgsDelayAudioClass, sequencer_duration_changed),
@@ -153,16 +233,115 @@ ags_delay_audio_tactable_interface_init(AgsTactableInterface *tactable)
 }
 
 void
+ags_delay_audio_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  plugin->set_ports = ags_delay_audio_set_ports;
+}
+
+void
 ags_delay_audio_init(AgsDelayAudio *delay_audio)
 {
-  delay_audio->bpm = AGS_DEVOUT_DEFAULT_BPM;
-  delay_audio->tact = exp2(-2.0);
+  GList *port;
 
-  delay_audio->notation_delay = AGS_AUDIO_LOOP_DEFAULT_JIFFIE / 64.0;
-  delay_audio->sequencer_delay = AGS_AUDIO_LOOP_DEFAULT_JIFFIE * delay_audio->tact;
+  AGS_RECALL(delay_audio)->name = "ags-delay\0";
+  AGS_RECALL(delay_audio)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(delay_audio)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(delay_audio)->xml_type = "ags-delay-audio\0";
 
-  delay_audio->sequencer_duration = 16.0;
-  delay_audio->notation_duration = 1200.0 * 64.0;
+  port = NULL;
+
+  /* bpm */
+  delay_audio->bpm = g_object_new(AGS_TYPE_PORT,
+				  "plugin-name\0", ags_delay_audio_plugin_name,
+				  "specifier\0", ags_delay_audio_specifier[0],
+				  "control-port\0", ags_delay_audio_control_port[0],
+				  "port-value-is-pointer\0", FALSE,
+				  "port-value-type\0", G_TYPE_DOUBLE,
+				  "port-value-size\0", sizeof(gdouble),
+				  "port-value-length", 1,
+				  NULL);
+
+  delay_audio->bpm->port_value.ags_port_double = AGS_DEVOUT_DEFAULT_BPM;
+
+  port = g_list_prepend(port, delay_audio->bpm);
+
+  /* tact */
+  delay_audio->tact = g_object_new(AGS_TYPE_PORT,
+				   "plugin-name\0", ags_delay_audio_plugin_name,
+				   "specifier\0", ags_delay_audio_specifier[1],
+				   "control-port\0", ags_delay_audio_control_port[1],
+				   "port-value-is-pointer\0", FALSE,
+				   "port-value-type\0", G_TYPE_DOUBLE,
+				   "port-value-size\0", sizeof(gdouble),
+				   "port-value-length", 1,
+				   NULL);
+
+  delay_audio->tact->port_value.ags_port_double = AGS_DEVOUT_DEFAULT_TACT;
+
+  port = g_list_prepend(port, delay_audio->tact);
+
+  /* sequencer delay */
+  delay_audio->sequencer_delay = g_object_new(AGS_TYPE_PORT,
+					      "plugin-name\0", ags_delay_audio_plugin_name,
+					      "specifier\0", ags_delay_audio_specifier[2],
+					      "control-port\0", ags_delay_audio_control_port[2],
+					      "port-value-is-pointer\0", FALSE,
+					      "port-value-type\0", G_TYPE_DOUBLE,
+					      "port-value-size\0", sizeof(gdouble),
+					      "port-value-length", 1,
+					      NULL);
+
+  delay_audio->sequencer_delay->port_value.ags_port_double = AGS_DEVOUT_DEFAULT_DELAY * exp2(8.0 - 4.0);
+
+  port = g_list_prepend(port, delay_audio->sequencer_delay);
+
+  /* notation delay */
+  delay_audio->notation_delay = g_object_new(AGS_TYPE_PORT,
+					     "plugin-name\0", ags_delay_audio_plugin_name,
+					     "specifier\0", ags_delay_audio_specifier[3],
+					     "control-port\0", ags_delay_audio_control_port[3],
+					     "port-value-is-pointer\0", FALSE,
+					     "port-value-type\0", G_TYPE_DOUBLE,
+					     "port-value-size\0", sizeof(gdouble),
+					     "port-value-length", 1,
+					     NULL);
+
+  delay_audio->notation_delay->port_value.ags_port_double = AGS_DEVOUT_DEFAULT_DELAY;
+
+  port = g_list_prepend(port, delay_audio->notation_delay);
+
+  /* sequencer duration */
+  delay_audio->sequencer_duration = g_object_new(AGS_TYPE_PORT,
+						 "plugin-name\0", ags_delay_audio_plugin_name,
+						 "specifier\0", ags_delay_audio_specifier[4],
+						 "control-port\0", ags_delay_audio_control_port[4],
+						 "port-value-is-pointer\0", FALSE,
+						 "port-value-type\0", G_TYPE_DOUBLE,
+						 "port-value-size\0", sizeof(gdouble),
+						 "port-value-length", 1,
+						 NULL);
+
+  delay_audio->sequencer_duration->port_value.ags_port_double = ceil(16.0 * AGS_DEVOUT_DEFAULT_DELAY * exp2(8.0 - 4.0) + 1.0);
+
+  port = g_list_prepend(port, delay_audio->sequencer_duration);
+
+  /* notation duration */
+  delay_audio->notation_duration = g_object_new(AGS_TYPE_PORT,
+						"plugin-name\0", ags_delay_audio_plugin_name,
+						"specifier\0", ags_delay_audio_specifier[5],
+						"control-port\0", ags_delay_audio_control_port[5],
+						"port-value-is-pointer\0", FALSE,
+						"port-value-type\0", G_TYPE_DOUBLE,
+						"port-value-size\0", sizeof(gdouble),
+						"port-value-length", 1,
+						NULL);
+
+  delay_audio->notation_duration->port_value.ags_port_double = AGS_NOTATION_DEFAULT_DURATION;
+
+  port = g_list_prepend(port, delay_audio->notation_duration);
+
+  /*  */
+  AGS_RECALL(delay_audio)->port = port;
 }
 
 void
@@ -176,18 +355,130 @@ ags_delay_audio_set_property(GObject *gobject,
   delay_audio = AGS_DELAY_AUDIO(gobject);
 
   switch(prop_id){
+  case PROP_BPM:
+    {
+      AgsPort *port;
+
+      port = (AgsPort *) g_value_get_object(value);
+
+      if(port == delay_audio->bpm){
+	return;
+      }
+
+      if(delay_audio->bpm != NULL){
+	g_object_unref(G_OBJECT(delay_audio->bpm));
+      }
+      
+      if(port != NULL){
+	g_object_ref(G_OBJECT(port));
+      }
+
+      delay_audio->bpm = port;
+    }
+    break;
+  case PROP_TACT:
+    {
+      AgsPort *port;
+
+      port = (AgsPort *) g_value_get_object(value);
+
+      if(port == delay_audio->tact){
+	return;
+      }
+
+      if(delay_audio->tact != NULL){
+	g_object_unref(G_OBJECT(delay_audio->tact));
+      }
+      
+      if(port != NULL){
+	g_object_ref(G_OBJECT(port));
+      }
+
+      delay_audio->tact = port;
+    }
+    break;
   case PROP_NOTATION_DELAY:
     {
-      guint delay;
+      AgsPort *port;
 
-      delay_audio->notation_delay = (guint) g_value_get_uint(value);
+      port = (AgsPort *) g_value_get_object(value);
+
+      if(port == delay_audio->notation_delay){
+	return;
+      }
+
+      if(delay_audio->notation_delay != NULL){
+	g_object_unref(G_OBJECT(delay_audio->notation_delay));
+      }
+      
+      if(port != NULL){
+	g_object_ref(G_OBJECT(port));
+      }
+
+      delay_audio->notation_delay = port;
     }
     break;
   case PROP_SEQUENCER_DELAY:
     {
-      guint delay;
+      AgsPort *port;
 
-      delay_audio->sequencer_delay = (guint) g_value_get_uint(value);
+      port = (AgsPort *) g_value_get_object(value);
+
+      if(port == delay_audio->sequencer_delay){
+	return;
+      }
+
+      if(delay_audio->sequencer_delay != NULL){
+	g_object_unref(G_OBJECT(delay_audio->sequencer_delay));
+      }
+      
+      if(port != NULL){
+	g_object_ref(G_OBJECT(port));
+      }
+
+      delay_audio->sequencer_delay = port;
+    }
+    break;
+  case PROP_NOTATION_DURATION:
+    {
+      AgsPort *port;
+
+      port = (AgsPort *) g_value_get_object(value);
+
+      if(port == delay_audio->notation_duration){
+	return;
+      }
+
+      if(delay_audio->notation_duration != NULL){
+	g_object_unref(G_OBJECT(delay_audio->notation_duration));
+      }
+      
+      if(port != NULL){
+	g_object_ref(G_OBJECT(port));
+      }
+
+      delay_audio->notation_duration = port;
+    }
+    break;
+  case PROP_SEQUENCER_DURATION:
+    {
+      AgsPort *port;
+
+      port = (AgsPort *) g_value_get_object(value);
+
+      if(port == delay_audio->sequencer_duration){
+	return;
+      }
+
+      if(delay_audio->sequencer_duration != NULL){
+	g_object_unref(G_OBJECT(delay_audio->sequencer_duration));
+      }
+      
+      if(port != NULL){
+	g_object_ref(G_OBJECT(port));
+      }
+
+      delay_audio->sequencer_duration = port;
     }
     break;
   default:
@@ -207,15 +498,23 @@ ags_delay_audio_get_property(GObject *gobject,
   delay_audio = AGS_DELAY_AUDIO(gobject);
 
   switch(prop_id){
+  case PROP_BPM:
+    g_value_set_object(value, delay_audio->bpm);
+    break;
+  case PROP_TACT:
+    g_value_set_object(value, delay_audio->tact);
+    break;
   case PROP_NOTATION_DELAY:
-    {
-      g_value_set_uint(value, delay_audio->notation_delay);
-    }
+    g_value_set_object(value, delay_audio->notation_delay);
     break;
   case PROP_SEQUENCER_DELAY:
-    {
-      g_value_set_uint(value, delay_audio->sequencer_delay);
-    }
+    g_value_set_object(value, delay_audio->sequencer_delay);
+    break;
+  case PROP_NOTATION_DURATION:
+    g_value_set_object(value, delay_audio->notation_duration);
+    break;
+  case PROP_SEQUENCER_DURATION:
+    g_value_set_object(value, delay_audio->sequencer_duration);
     break;
   default:
     G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, param_spec);
@@ -224,46 +523,248 @@ ags_delay_audio_get_property(GObject *gobject,
 }
 
 void
+ags_delay_audio_set_ports(AgsPlugin *plugin, GList *port)
+{
+  while(port != NULL){
+    if(!strncmp(AGS_PORT(port->data)->specifier,
+		"./bpm[0]\0",
+		8)){
+      g_object_set(G_OBJECT(plugin),
+		   "bpm\0", AGS_PORT(port->data),
+		   NULL);
+    }else if(!strncmp(AGS_PORT(port->data)->specifier,
+		      "./tact[0]\0",
+		      9)){
+      g_object_set(G_OBJECT(plugin),
+		   "tact\0", AGS_PORT(port->data),
+		   NULL);
+    }else if(!strncmp(AGS_PORT(port->data)->specifier,
+		      "./notation-delay[0]\0",
+		      18)){
+      g_object_set(G_OBJECT(plugin),
+		   "notation-delay\0", AGS_PORT(port->data),
+		   NULL);
+    }else if(!strncmp(AGS_PORT(port->data)->specifier,
+		      "./sequencer-delay[0]\0",
+		      19)){
+      g_object_set(G_OBJECT(plugin),
+		   "sequencer-delay\0", AGS_PORT(port->data),
+		   NULL);
+    }else if(!strncmp(AGS_PORT(port->data)->specifier,
+		      "./notation-duration[0]\0",
+		      21)){
+      g_object_set(G_OBJECT(plugin),
+		   "notation-duration\0", AGS_PORT(port->data),
+		   NULL);
+    }else if(!strncmp(AGS_PORT(port->data)->specifier,
+		      "./sequencer-duration[0]\0",
+		      22)){
+      g_object_set(G_OBJECT(plugin),
+		   "sequencer-duration\0", AGS_PORT(port->data),
+		   NULL);
+    }
+
+    port = port->next;
+  }
+}
+
+void
 ags_delay_audio_finalize(GObject *gobject)
 {
+  AgsDelayAudio *delay_audio;
+
+  delay_audio = AGS_DELAY_AUDIO(gobject);
+
+  if(delay_audio->bpm != NULL){
+    g_object_unref(G_OBJECT(delay_audio->bpm));
+  }
+
+  if(delay_audio->tact != NULL){
+    g_object_unref(G_OBJECT(delay_audio->tact));
+  }
+
+  if(delay_audio->notation_delay != NULL){
+    g_object_unref(G_OBJECT(delay_audio->notation_delay));
+  }
+
+  if(delay_audio->sequencer_delay != NULL){
+    g_object_unref(G_OBJECT(delay_audio->sequencer_delay));
+  }
+
+  if(delay_audio->notation_duration != NULL){
+    g_object_unref(G_OBJECT(delay_audio->notation_duration));
+  }
+
+  if(delay_audio->sequencer_duration != NULL){
+    g_object_unref(G_OBJECT(delay_audio->sequencer_duration));
+  }
+
+  /* call parent */
   G_OBJECT_CLASS(ags_delay_audio_parent_class)->finalize(gobject);
 }
 
 void
-ags_delay_audio_change_bpm(AgsTactable *tactable, gdouble bpm)
+ags_delay_audio_change_bpm(AgsTactable *tactable, gdouble new_bpm)
 {
   AgsDevout *devout;
   AgsDelayAudio *delay_audio;
-  
+  gdouble old_bpm;
+  gdouble sequencer_delay, notation_delay;
+  gdouble sequencer_duration, notation_duration;
+  GValue value = {0,};
+
   delay_audio = AGS_DELAY_AUDIO(tactable);
 
   devout = AGS_DEVOUT(AGS_RECALL(delay_audio)->devout);
 
-  delay_audio->notation_delay *= (delay_audio->bpm / bpm);
-  delay_audio->sequencer_delay *= (delay_audio->bpm / bpm);
+  /* retrieve old bpm */
+  g_value_init(&value, G_TYPE_DOUBLE);
 
-  delay_audio->bpm = bpm;
+  ags_port_safe_read(delay_audio->bpm, &value);
+  old_bpm = g_value_get_double(&value);
 
-  delay_audio->sequencer_duration *= (delay_audio->bpm / bpm);
+  /* retrieve sequencer_delay */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->sequencer_delay, &value);
+  sequencer_delay = g_value_get_double(&value);
+
+  /* retrieve notation_delay */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->notation_delay, &value);
+  notation_delay = g_value_get_double(&value);
+
+  /* retrieve sequencer_duration */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->sequencer_duration, &value);
+  sequencer_duration = g_value_get_double(&value);
+
+  /* retrieve notation_duration */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->notation_duration, &value);
+  notation_duration = g_value_get_double(&value);
+
+  /* -- start adjust -- */
+  /* notation-delay */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, notation_delay * (old_bpm / new_bpm));
+  ags_port_safe_write(delay_audio->notation_delay, &value);
+
+  /* sequencer-delay */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, sequencer_delay * (old_bpm / new_bpm));
+  ags_port_safe_write(delay_audio->sequencer_delay, &value);
+
+  /**/
+  g_value_reset(&value);
+
+  g_value_set_double(&value, new_bpm);
+  ags_port_safe_write(delay_audio->bpm, &value);
+
+  /* notation-duration */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, notation_duration * (old_bpm / new_bpm));
+  ags_port_safe_write(delay_audio->notation_duration, &value);
+
+  /* sequencer-duration */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, sequencer_duration * (old_bpm / new_bpm));
+  ags_port_safe_write(delay_audio->sequencer_duration, &value);
+
+  /* -- finish adjust -- */
+
+  /* emit changed */
   ags_delay_audio_sequencer_duration_changed(delay_audio);
 }
 
 void
-ags_delay_audio_change_tact(AgsTactable *tactable, gdouble tact)
+ags_delay_audio_change_tact(AgsTactable *tactable, gdouble new_tact)
 {
   AgsDevout *devout;
   AgsDelayAudio *delay_audio;
+  gdouble old_tact;
+  gdouble sequencer_delay, notation_delay;
+  gdouble sequencer_duration, notation_duration;
+  gdouble factor;
+  GValue value = {0,};
   
   delay_audio = AGS_DELAY_AUDIO(tactable);
 
   devout = AGS_DEVOUT(AGS_RECALL(delay_audio)->devout);
 
-//  delay_audio->notation_delay *= (delay_audio->tact / tact);
-  delay_audio->sequencer_delay *= (tact / delay_audio->tact);
+  /* retrieve old tact */
+  g_value_init(&value, G_TYPE_DOUBLE);
 
-  delay_audio->tact = tact;
+  ags_port_safe_read(delay_audio->tact, &value);
+  old_tact = g_value_get_double(&value);
 
-  delay_audio->sequencer_duration *= (tact / delay_audio->tact);
+  /* retrieve sequencer_delay */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->sequencer_delay, &value);
+  sequencer_delay = g_value_get_double(&value);
+
+  /* retrieve notation_delay */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->notation_delay, &value);
+  notation_delay = g_value_get_double(&value);
+
+  /* retrieve sequencer_duration */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->sequencer_duration, &value);
+  sequencer_duration = g_value_get_double(&value);
+
+  /* retrieve notation_duration */
+  g_value_reset(&value);
+
+  ags_port_safe_read(delay_audio->notation_duration, &value);
+  notation_duration = g_value_get_double(&value);
+
+  /* -- start adjust -- */
+  factor = (new_tact / old_tact);
+
+  /* notation-delay */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, notation_delay * factor);
+  ags_port_safe_write(delay_audio->notation_delay, &value);
+
+  /* sequencer-delay */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, sequencer_delay * factor);
+  ags_port_safe_write(delay_audio->sequencer_delay, &value);
+
+  /**/
+  g_value_reset(&value);
+
+  g_value_set_double(&value, new_tact);
+  ags_port_safe_write(delay_audio->tact, &value);
+
+  /* notation-duration */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, notation_duration * factor);
+  ags_port_safe_write(delay_audio->notation_duration, &value);
+
+  /* sequencer-duration */
+  g_value_reset(&value);
+
+  g_value_set_double(&value, sequencer_duration * factor);
+  ags_port_safe_write(delay_audio->sequencer_duration, &value);
+
+  /* -- finish adjust -- */
+
+  /* emit changed */
   ags_delay_audio_sequencer_duration_changed(delay_audio);
 }
 
@@ -271,10 +772,13 @@ void
 ags_delay_audio_change_sequencer_duration(AgsTactable *tactable, gdouble duration)
 {
   AgsDelayAudio *delay_audio;
+  GValue value = {0,};
   
   delay_audio = AGS_DELAY_AUDIO(tactable);
 
-  delay_audio->sequencer_duration = duration;
+  g_value_init(&value, G_TYPE_DOUBLE);
+
+  g_value_set_double(&value, duration);
   ags_delay_audio_sequencer_duration_changed(delay_audio);
 }
 
@@ -282,10 +786,25 @@ void
 ags_delay_audio_change_notation_duration(AgsTactable *tactable, gdouble duration)
 {
   AgsDelayAudio *delay_audio;
+  GValue value = {0,};
   
   delay_audio = AGS_DELAY_AUDIO(tactable);
 
-  delay_audio->notation_duration = duration;
+  g_value_init(&value, G_TYPE_DOUBLE);
+
+  g_value_set_double(&value, duration);
+  ags_delay_audio_notation_duration_changed(delay_audio);
+}
+
+void
+ags_delay_audio_notation_duration_changed(AgsDelayAudio *delay_audio)
+{
+  g_return_if_fail(AGS_IS_DELAY_AUDIO(delay_audio));
+
+  g_object_ref((GObject *) delay_audio);
+  g_signal_emit(G_OBJECT(delay_audio),
+		delay_audio_signals[NOTATION_DURATION_CHANGED], 0);
+  g_object_unref((GObject *) delay_audio);
 }
 
 void

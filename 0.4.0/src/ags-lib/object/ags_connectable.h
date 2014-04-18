@@ -19,6 +19,7 @@
 #ifndef __AGS_CONNECTABLE_H__
 #define __AGS_CONNECTABLE_H__
 
+#include <glib.h>
 #include <glib-object.h>
 
 #define AGS_TYPE_CONNECTABLE                    (ags_connectable_get_type())
@@ -34,6 +35,12 @@ typedef struct _AgsConnectableInterface AgsConnectableInterface;
 struct _AgsConnectableInterface
 {
   GTypeInterface interface;
+
+  void (*add_to_registry)(AgsConnectable *connectable);
+  void (*remove_from_registry)(AgsConnectable *connectable);
+
+  gboolean (*is_ready)(AgsConnectable *connectable);
+  gboolean (*is_connected)(AgsConnectable *connectable);
 
   void (*connect)(AgsConnectable *connectable);
   void (*disconnect)(AgsConnectable *connectable);

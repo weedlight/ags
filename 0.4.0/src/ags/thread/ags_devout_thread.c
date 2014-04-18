@@ -20,6 +20,8 @@
 
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/thread/ags_timestamp_thread.h>
+
 #include <ags/audio/ags_devout.h>
 
 void ags_devout_thread_class_init(AgsDevoutThreadClass *devout_thread);
@@ -110,6 +112,9 @@ ags_devout_thread_init(AgsDevoutThread *devout_thread)
 
   thread = AGS_THREAD(devout_thread);
 
+  devout_thread->timestamp_thread = ags_timestamp_thread_new();
+  ags_thread_add_child(thread, devout_thread->timestamp_thread);
+
   devout_thread->error = NULL;
 }
 
@@ -169,9 +174,9 @@ ags_devout_thread_start(AgsThread *thread)
   if((AGS_DEVOUT_ALSA & (devout->flags)) != 0){
     if(devout->out.alsa.handle == NULL){
       ags_devout_alsa_init(devout,
-			   devout_thread->error);
+      			   devout_thread->error);
       
-      devout->flags &= (~AGS_DEVOUT_START_PLAY);      
+      devout->flags &= (~AGS_DEVOUT_START_PLAY);
       g_message("ags_devout_alsa_play\0");
     }
   }
@@ -203,8 +208,6 @@ ags_devout_thread_run(AgsThread *thread)
   AgsDevoutThread *devout_thread;
   GError *error;
 
-  //  AGS_THREAD_CLASS(ags_devout_thread_parent_class)->run(thread);
-
   devout_thread = AGS_DEVOUT_THREAD(thread);
 
   devout = AGS_DEVOUT(thread->devout);
@@ -213,8 +216,8 @@ ags_devout_thread_run(AgsThread *thread)
 
   error = NULL;
   ags_devout_alsa_play(devout,
-		       &error);
-
+  		       &error);
+  
   if(error != NULL){
     //TODO:JK: implement me
   }
@@ -230,7 +233,7 @@ ags_devout_thread_stop(AgsThread *thread)
   devout_thread = AGS_DEVOUT_THREAD(thread);
 
   devout = AGS_DEVOUT(thread->devout);
-  audio_loop = devout->audio_loop;
+  audio_loop = AGS_AUDIO_LOOP(thread->parent);
 
   if((AGS_DEVOUT_START_PLAY & (devout->flags)) != 0){
     g_message("ags_devout_thread_stop:  just starting\n\0");
@@ -240,9 +243,10 @@ ags_devout_thread_stop(AgsThread *thread)
   AGS_THREAD_CLASS(ags_devout_thread_parent_class)->stop(thread);
 
   devout->flags &= ~(AGS_DEVOUT_PLAY);
-
+  
   if((AGS_DEVOUT_ALSA & (devout->flags)) != 0){
     ags_devout_alsa_free(devout);
+  }else{  
   }
 }
 

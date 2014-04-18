@@ -18,15 +18,25 @@
 
 #include <ags/audio/recall/ags_loop_channel_run.h>
 
+#include <ags/object/ags_dynamic_connectable.h>
+
+#include <ags/main.h>
+
+#include <ags/util/ags_id_generator.h>
+
 #include <ags/lib/ags_list.h>
 
 #include <ags-lib/object/ags_connectable.h>
-#include <ags/object/ags_dynamic_connectable.h>
+
 #include <ags/object/ags_countable.h>
+#include <ags/object/ags_plugin.h>
+
+#include <ags/file/ags_file_stock.h>
+#include <ags/file/ags_file_id_ref.h>
+#include <ags/file/ags_file_lookup.h>
 
 #include <ags/audio/ags_devout.h>
 #include <ags/audio/ags_audio.h>
-#include <ags/audio/ags_audio_signal.h>
 #include <ags/audio/ags_recall_container.h>
 #include <ags/audio/ags_recall_id.h>
 
@@ -37,6 +47,7 @@
 void ags_loop_channel_run_class_init(AgsLoopChannelRunClass *loop_channel_run);
 void ags_loop_channel_run_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_loop_channel_run_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable);
+void ags_loop_channel_run_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_loop_channel_run_init(AgsLoopChannelRun *loop_channel_run);
 void ags_loop_channel_run_set_property(GObject *gobject,
 				       guint prop_id,
@@ -61,13 +72,13 @@ void ags_loop_channel_run_sequencer_duration_changed_callback(AgsDelayAudio *del
 							      AgsLoopChannelRun *loop_channel_run);
 
 void ags_loop_channel_run_start_callback(AgsCountBeatsAudioRun *count_beats_audio_run,
-					 guint nth_run,
+					 guint run_order,
 					 AgsLoopChannelRun *loop_channel_run);
 void ags_loop_channel_run_loop_callback(AgsCountBeatsAudioRun *count_beats_audio_run,
-					guint nth_run,
+					guint run_order,
 					AgsLoopChannelRun *loop_channel_run);
 void ags_loop_channel_run_stop_callback(AgsCountBeatsAudioRun *count_beats_audio_run,
-					guint nth_run,
+					guint run_order,
 					AgsLoopChannelRun *loop_channel_run);
 
 enum{
@@ -78,6 +89,7 @@ enum{
 static gpointer ags_loop_channel_run_parent_class = NULL;
 static AgsConnectableInterface *ags_loop_channel_run_parent_connectable_interface;
 static AgsDynamicConnectableInterface *ags_loop_channel_run_parent_dynamic_connectable_interface;
+static AgsPluginInterface *ags_loop_channel_run_parent_plugin_interface;
 
 GType
 ags_loop_channel_run_get_type()
@@ -109,6 +121,12 @@ ags_loop_channel_run_get_type()
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_loop_channel_run_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
     ags_type_loop_channel_run = g_type_register_static(AGS_TYPE_RECALL_CHANNEL_RUN,
 						       "AgsLoopChannelRun\0",
 						       &ags_loop_channel_run_info,
@@ -120,6 +138,10 @@ ags_loop_channel_run_get_type()
     g_type_add_interface_static(ags_type_loop_channel_run,
 				AGS_TYPE_DYNAMIC_CONNECTABLE,
 				&ags_dynamic_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_loop_channel_run,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return (ags_type_loop_channel_run);
@@ -143,7 +165,7 @@ ags_loop_channel_run_class_init(AgsLoopChannelRunClass *loop_channel_run)
   gobject->finalize = ags_loop_channel_run_finalize;
 
   /* properties */
-  param_spec = g_param_spec_object("count_beats_audio_run\0",
+  param_spec = g_param_spec_object("count-beats-audio-run\0",
 				   "assigned AgsCountBeatsAudioRun\0",
 				   "The pointer to a counter object which indicates when looping should happen\0",
 				   G_TYPE_OBJECT,
@@ -178,16 +200,24 @@ ags_loop_channel_run_dynamic_connectable_interface_init(AgsDynamicConnectableInt
 }
 
 void
+ags_loop_channel_run_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  ags_loop_channel_run_parent_plugin_interface = g_type_interface_peek_parent(plugin);
+}
+
+void
 ags_loop_channel_run_init(AgsLoopChannelRun *loop_channel_run)
 {
+  AGS_RECALL(loop_channel_run)->name = "ags-loop\0";
+  AGS_RECALL(loop_channel_run)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(loop_channel_run)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(loop_channel_run)->xml_type = "ags-loop-channel-run\0";
+  AGS_RECALL(loop_channel_run)->port = NULL;
+
   AGS_RECALL(loop_channel_run)->flags |= AGS_RECALL_INPUT_ORIENTATED;
   AGS_RECALL(loop_channel_run)->child_type = G_TYPE_NONE;
 
   loop_channel_run->count_beats_audio_run = NULL;
-
-  loop_channel_run->template = NULL;
-
-  loop_channel_run->audio_signal = NULL;
 }
 
 void
@@ -225,14 +255,6 @@ ags_loop_channel_run_set_property(GObject *gobject,
 				       (AgsRecall *) loop_channel_run->count_beats_audio_run);
 	}else{
 	  if((AGS_RECALL_RUN_INITIALIZED & (AGS_RECALL(loop_channel_run)->flags)) != 0){
-	    AgsDelayAudio *delay_audio;
-	    
-	    /* AgsDelayAudio */
-	    delay_audio = AGS_DELAY_AUDIO(AGS_RECALL_AUDIO_RUN(loop_channel_run->count_beats_audio_run->delay_audio_run)->recall_audio);
-
-	    g_signal_handler_disconnect(G_OBJECT(delay_audio),
-					loop_channel_run->start_handler);
-
 	    /* AgsCountBeatsAudioRun */
 	    g_signal_handler_disconnect(G_OBJECT(loop_channel_run->count_beats_audio_run),
 					loop_channel_run->start_handler);
@@ -254,25 +276,16 @@ ags_loop_channel_run_set_property(GObject *gobject,
 				    ags_recall_dependency_new((GObject *) count_beats_audio_run));
 	}else{
 	  if((AGS_RECALL_RUN_INITIALIZED & (AGS_RECALL(loop_channel_run)->flags)) != 0){
-	    AgsDelayAudio *delay_audio;
-    
-	    /* AgsDelayAudio */
-	    delay_audio = AGS_DELAY_AUDIO(AGS_RECALL_AUDIO_RUN(loop_channel_run->count_beats_audio_run->delay_audio_run)->recall_audio);
-	    
-	    loop_channel_run->sequencer_duration_changed_handler =
-	      g_signal_connect(G_OBJECT(delay_audio), "sequencer_duration_changed\0",
-			       G_CALLBACK(ags_loop_channel_run_sequencer_duration_changed_callback), loop_channel_run);
-	    
 	    /* AgsCountBeatsAudioRun */
 	    loop_channel_run->start_handler =
-	      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer_start\0",
+	      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer-start\0",
 			       G_CALLBACK(ags_loop_channel_run_loop_callback), loop_channel_run);
 	    
 	    loop_channel_run->loop_handler =
-	      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer_loop\0",
+	      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer-loop\0",
 			       G_CALLBACK(ags_loop_channel_run_loop_callback), loop_channel_run);
 	    loop_channel_run->stop_handler =
-	      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer_stop\0",
+	      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer-stop\0",
 			       G_CALLBACK(ags_loop_channel_run_loop_callback), loop_channel_run);
 	  }
 	}
@@ -350,26 +363,17 @@ ags_loop_channel_run_connect_dynamic(AgsDynamicConnectable *dynamic_connectable)
   loop_channel_run = AGS_LOOP_CHANNEL_RUN(dynamic_connectable);
 
   if(loop_channel_run->count_beats_audio_run != NULL){
-    AgsDelayAudio *delay_audio;
-
-    /* AgsDelayAudio */
-    delay_audio = AGS_DELAY_AUDIO(AGS_RECALL_AUDIO_RUN(loop_channel_run->count_beats_audio_run->delay_audio_run)->recall_audio);
-
-    loop_channel_run->sequencer_duration_changed_handler =
-      g_signal_connect(G_OBJECT(delay_audio), "sequencer_duration_changed\0",
-		       G_CALLBACK(ags_loop_channel_run_sequencer_duration_changed_callback), loop_channel_run);
-
     /* AgsCountBeatsAudioRun */
     loop_channel_run->start_handler =
-      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer_start\0",
+      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer-start\0",
 		       G_CALLBACK(ags_loop_channel_run_start_callback), loop_channel_run);
     
     loop_channel_run->loop_handler =
-      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer_loop\0",
+      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer-loop\0",
 		       G_CALLBACK(ags_loop_channel_run_loop_callback), loop_channel_run);
     
     loop_channel_run->stop_handler =
-      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer_stop\0",
+      g_signal_connect(G_OBJECT(loop_channel_run->count_beats_audio_run), "sequencer-stop\0",
 		       G_CALLBACK(ags_loop_channel_run_stop_callback), loop_channel_run);
   }
 }
@@ -384,14 +388,6 @@ ags_loop_channel_run_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectab
   loop_channel_run = AGS_LOOP_CHANNEL_RUN(dynamic_connectable);
 
   if(loop_channel_run->count_beats_audio_run != NULL){
-    AgsDelayAudio *delay_audio;
-    
-    /* AgsDelayAudio */
-    delay_audio = AGS_DELAY_AUDIO(AGS_RECALL_AUDIO_RUN(loop_channel_run->count_beats_audio_run->delay_audio_run)->recall_audio);
-    
-    g_signal_handler_disconnect(G_OBJECT(delay_audio),
-				loop_channel_run->start_handler);
-
     /* AgsCountBeatsAudioRun */
     g_signal_handler_disconnect(G_OBJECT(loop_channel_run->count_beats_audio_run),
 				loop_channel_run->start_handler);
@@ -412,19 +408,19 @@ ags_loop_channel_run_resolve_dependencies(AgsRecall *recall)
   AgsRecallDependency *recall_dependency;
   AgsCountBeatsAudioRun *count_beats_audio_run;
   GList *list;
-  AgsGroupId group_id;
+  AgsRecallID *recall_id;
   guint i, i_stop;
 
   loop_channel_run = AGS_LOOP_CHANNEL_RUN(recall);
 
-  template = loop_channel_run->template;
+  template = AGS_RECALL(ags_recall_find_template(AGS_RECALL_CONTAINER(recall->container)->recall_channel_run)->data);
 
   list = template->dependencies;
 
   channel = AGS_RECALL_CHANNEL_RUN(loop_channel_run)->source;
   audio = AGS_AUDIO(channel->audio);
 
-  group_id = recall->recall_id->child_group_id;
+  recall_id = recall->recall_id;
 
   count_beats_audio_run = NULL;
   i_stop = 1;
@@ -433,7 +429,7 @@ ags_loop_channel_run_resolve_dependencies(AgsRecall *recall)
     recall_dependency = AGS_RECALL_DEPENDENCY(list->data);
 
     if(AGS_IS_COUNT_BEATS_AUDIO_RUN(recall_dependency->dependency)){
-      count_beats_audio_run = (AgsCountBeatsAudioRun *) ags_recall_dependency_resolve(recall_dependency, group_id);
+      count_beats_audio_run = (AgsCountBeatsAudioRun *) ags_recall_dependency_resolve(recall_dependency, recall_id);
 
       i++;
     }
@@ -442,7 +438,7 @@ ags_loop_channel_run_resolve_dependencies(AgsRecall *recall)
   }
   
   g_object_set(G_OBJECT(recall),
-	       "count_beats_audio_run\0", count_beats_audio_run,
+	       "count-beats-audio-run\0", count_beats_audio_run,
 	       NULL);
 }
 
@@ -458,9 +454,6 @@ ags_loop_channel_run_duplicate(AgsRecall *recall,
 											      recall_id,
 											      n_params, parameter);
   
-  //TODO:JK this is really ugly
-  copy->template = recall;
-
   return((AgsRecall *) copy);
 }
 
@@ -470,50 +463,46 @@ ags_loop_channel_run_create_audio_signals(AgsLoopChannelRun *loop_channel_run)
   AgsDevout *devout;
   AgsRecycling *recycling;
   AgsAudioSignal *audio_signal;
+  guint delay, attack;
+  guint tic_counter_incr;
+
+  //  g_message("debug\0");
 
   devout = AGS_DEVOUT(AGS_RECALL(loop_channel_run)->devout);
 
+  /* recycling */
   recycling = AGS_RECALL_CHANNEL_RUN(loop_channel_run)->source->first_recycling;
+
+  /* delay and attack */
+  tic_counter_incr = devout->tic_counter + 1;
+
+  attack = devout->attack[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+			   0:
+			   tic_counter_incr)];
+  delay = devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+			 0:
+			 tic_counter_incr)];
 
   while(recycling != AGS_RECALL_CHANNEL_RUN(loop_channel_run)->source->last_recycling->next){
     audio_signal = ags_audio_signal_new((GObject *) devout,
 					(GObject *) recycling,
 					(GObject *) AGS_RECALL(loop_channel_run)->recall_id);
-    ags_recycling_create_audio_signal_with_defaults(recycling, audio_signal, 0);
     audio_signal->stream_current = audio_signal->stream_beginning;
-    loop_channel_run->audio_signal = g_list_prepend(loop_channel_run->audio_signal,
-						    audio_signal);
-    g_object_ref(G_OBJECT(audio_signal));
+    
+    /*  */
+    ags_recycling_create_audio_signal_with_defaults(recycling,
+						    audio_signal,
+						    delay, attack);
+    audio_signal->stream_current = audio_signal->stream_beginning;
 
     ags_connectable_connect(AGS_CONNECTABLE(audio_signal));    
     ags_recycling_add_audio_signal(recycling,
 				   audio_signal);
 
-    g_message("+++++++++++++++++++++++++\n\nloop channel created: AgsAudioSignal#%llx\n\n+++++++++++++++++++++++++\0",
-	      (long long unsigned int) audio_signal);
+    g_message("+++++++++++++++++++++++++\n\nloop channel created: AgsAudioSignal#%llx[%u]\n\n+++++++++++++++++++++++++\0",
+	      (long long unsigned int) audio_signal, audio_signal->length);
 
     recycling = recycling->next;
-  }
-}
-
-void
-ags_loop_channel_run_sequencer_duration_changed_callback(AgsDelayAudio *delay_audio,
-							 AgsLoopChannelRun *loop_channel_run)
-{
-  AgsAudioSignal *audio_signal;
-  GList *list;
-  guint length;
-
-  list = loop_channel_run->audio_signal;
-  length = (guint) ceil(delay_audio->sequencer_duration * delay_audio->sequencer_delay);
-
-  while(list != NULL){
-    audio_signal = AGS_AUDIO_SIGNAL(list->data);
-
-    ags_audio_signal_stream_safe_resize(audio_signal,
-					length);
-
-    list = list->next;
   }
 }
 
@@ -522,14 +511,15 @@ ags_loop_channel_run_start_callback(AgsCountBeatsAudioRun *count_beats_audio_run
 				    guint run_order,
 				    AgsLoopChannelRun *loop_channel_run)
 {
+  
+  g_message("ags_loop_channel_run_start_callback - run_order: %u; %u\n\0",
+	    AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order,
+	    run_order);
 
-  //  g_message("ags_loop_channel_run_start_callback - run_order: %u; %u\n\0",
-  //	 AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order,
-  //	 run_order);
-
-  if(AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order == run_order){
+  //TODO:JK: optimize tree see deprecated AgsRunOrder
+  //  if(AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order == run_order){
     ags_loop_channel_run_create_audio_signals(loop_channel_run);
-  }
+    //  }
 }
 
 void 
@@ -537,16 +527,14 @@ ags_loop_channel_run_loop_callback(AgsCountBeatsAudioRun *count_beats_audio_run,
 				   guint run_order,
 				   AgsLoopChannelRun *loop_channel_run)
 {
-  //  g_message("ags_loop_channel_run_loop_callback - run_order: %u; %u\n\0",
-  //	 AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order,
-  //	 run_order);
-  
-  if(AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order == run_order){
-    ags_list_free_and_unref_link(loop_channel_run->audio_signal);
-    loop_channel_run->audio_signal = NULL;
+  g_message("ags_loop_channel_run_loop_callback - run_order: %u; %u\0",
+	    AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order,
+	    run_order);
 
+  //TODO:JK: optimize tree see deprecated AgsRunOrder  
+  //  if(AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order == run_order){
     ags_loop_channel_run_create_audio_signals(loop_channel_run);
-  }
+    //  }
 }
 
 void 
@@ -564,8 +552,8 @@ ags_loop_channel_run_new(AgsChannel *channel,
   AgsLoopChannelRun *loop_channel_run;
 
   loop_channel_run = (AgsLoopChannelRun *) g_object_new(AGS_TYPE_LOOP_CHANNEL_RUN,
-							"channel\0", channel,
-							"count_beats_audio_run\0", count_beats_audio_run,
+							"source\0", channel,
+							"count-beats-audio-run\0", count_beats_audio_run,
 							NULL);
 
   if(is_template){

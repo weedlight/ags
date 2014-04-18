@@ -46,15 +46,24 @@
 #define AGS_IS_DEVOUT_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_DEVOUT))
 #define AGS_DEVOUT_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS(obj, AGS_TYPE_DEVOUT, AgsDevoutClass))
 
+#define AGS_DEVOUT_PLAY_DOMAIN(ptr)    ((AgsDevoutPlayDomain *)(ptr))
 #define AGS_DEVOUT_PLAY(ptr)           ((AgsDevoutPlay *)(ptr))
 
 #define AGS_DEVOUT_DEFAULT_SAMPLERATE (44100)
-#define AGS_DEVOUT_DEFAULT_BUFFER_SIZE (940)
+#define AGS_DEVOUT_DEFAULT_BUFFER_SIZE (256)
 #define AGS_DEVOUT_DEFAULT_BPM (120.0)
+#define AGS_DEVOUT_DEFAULT_JIFFIE ((double) AGS_DEVOUT_DEFAULT_SAMPLERATE / (double) AGS_DEVOUT_DEFAULT_BUFFER_SIZE)
+
+#define AGS_DEVOUT_DEFAULT_TACT (1.0)
+#define AGS_DEVOUT_DEFAULT_TACT_JIFFIE (60.0 / AGS_DEVOUT_DEFAULT_BPM * AGS_DEVOUT_DEFAULT_TACT)
+#define AGS_DEVOUT_DEFAULT_TACTRATE (1.0 / AGS_DEVOUT_DEFAULT_TACT_JIFFIE)
+
+#define AGS_DEVOUT_DEFAULT_DELAY (AGS_DEVOUT_DEFAULT_JIFFIE / AGS_DEVOUT_DEFAULT_TACTRATE)
 
 typedef struct _AgsDevout AgsDevout;
 typedef struct _AgsDevoutClass AgsDevoutClass;
 typedef struct _AgsDevoutPlay AgsDevoutPlay;
+typedef struct _AgsDevoutPlayDomain AgsDevoutPlayDomain;
 
 typedef enum
 {
@@ -75,17 +84,22 @@ typedef enum
   AGS_DEVOUT_START_PLAY                     = 1 << 10,
 
   AGS_DEVOUT_NONBLOCKING                    = 1 << 11,
+
+  AGS_DEVOUT_TIMING_SET_0                   = 1 << 12,
+  AGS_DEVOUT_TIMING_SET_1                   = 1 << 13,
 }AgsDevoutFlags;
 
 typedef enum
 {
   AGS_DEVOUT_PLAY_DONE              = 1,
   AGS_DEVOUT_PLAY_REMOVE            = 1 <<  1,
-  AGS_DEVOUT_PLAY_PAD               = 1 <<  2,
-  AGS_DEVOUT_PLAY_PLAYBACK          = 1 <<  3,
-  AGS_DEVOUT_PLAY_SEQUENCER         = 1 <<  4,
-  AGS_DEVOUT_PLAY_NOTATION          = 1 <<  5,
-  AGS_DEVOUT_PLAY_SUPER_THREADED    = 1 <<  6,
+  AGS_DEVOUT_PLAY_CHANNEL           = 1 <<  2,
+  AGS_DEVOUT_PLAY_PAD               = 1 <<  3,
+  AGS_DEVOUT_PLAY_AUDIO             = 1 <<  4,
+  AGS_DEVOUT_PLAY_PLAYBACK          = 1 <<  5,
+  AGS_DEVOUT_PLAY_SEQUENCER         = 1 <<  6,
+  AGS_DEVOUT_PLAY_NOTATION          = 1 <<  7,
+  AGS_DEVOUT_PLAY_SUPER_THREADED    = 1 <<  8,
 }AgsDevoutPlayFlags;
 
 typedef enum{
@@ -114,23 +128,20 @@ struct _AgsDevout
   guint buffer_size;
   guint frequency; // sample_rate
 
-  //  guint64 offset; // for timed tasks in AgsChannel
-
-  //  guint note_delay;
-  //  guint note_counter;
-  //  guint note_offset; // corresponds to AgsNote->x
-
   signed short** buffer;
 
   double bpm; // beats per minute
-  guint delay; // delay between tic change
+
+  guint *delay; // delay between tic change
+  guint *attack; // where currently tic resides in the stream's offset, measured in 1/64 of bpm
+
   guint delay_counter; // next time attack changeing when delay_counter == delay
-  AgsAttack *attack; // where currently tic resides in the stream's offset, measured in 1/64 of bpm
+  guint tic_counter;
 
   union{
     struct _AgsAO{
       ao_device *device;
-      ao_sample_format format;
+      ao_sample_format *format;
       int driver_ao;
     }ao;
     struct _AgsOss{
@@ -145,42 +156,58 @@ struct _AgsDevout
     }alsa;
   }out;
 
-  GObject *main;
+  GObject *ags_main;
   
   GList *audio;
-
-  AgsAudioLoop *audio_loop;
-  AgsTaskThread *task_thread;
-  AgsDevoutThread *devout_thread;
 };
 
 struct _AgsDevoutClass
 {
   GObjectClass object;
 
+  void (*play_init)(AgsDevout *devout,
+		    GError **error);
+  void (*play)(AgsDevout *devout,
+	       GError **error);
+  void (*stop)(AgsDevout *devout);
+
   void (*tic)(AgsDevout *devout);
 
   void (*note_offset_changed)(AgsDevout *devout, guint note_offset);
+};
+
+struct _AgsDevoutPlayDomain
+{
+  GObject *domain;
+  
+  gboolean playback;
+  gboolean sequencer;
+  gboolean notation;
+
+  GList *devout_play;
 };
 
 struct _AgsDevoutPlay
 {
   guint flags;
 
-  AgsIteratorThread *iterator_thread; 
+  AgsIteratorThread **iterator_thread;
 
   GObject *source;
   guint audio_channel;
 
-  AgsGroupId group_id; // if source is an AgsChannel or an AgsAudio
-  AgsRecallID *recall_id; // if source is an AgsRecall
+  AgsRecallID *recall_id[3];
 };
 
 GType ags_devout_get_type();
 
 GQuark ags_devout_error_quark();
 
+AgsDevoutPlayDomain* ags_devout_play_domain_alloc();
+void ags_devout_play_domain_free(AgsDevoutPlayDomain *devout_play_domain);
+
 AgsDevoutPlay* ags_devout_play_alloc();
+void ags_devout_play_free(AgsDevoutPlay *devout_play);
 
 void ags_devout_list_cards(GList **card_id, GList **card_name);
 void ags_devout_pcm_info(char *card_id,
@@ -192,6 +219,6 @@ void ags_devout_tic(AgsDevout *devout);
 
 void ags_devout_note_offset_changed(AgsDevout *devout, guint note_offset);
 
-AgsDevout* ags_devout_new(GObject *main);
+AgsDevout* ags_devout_new(GObject *ags_main);
 
 #endif /*__AGS_DEVOUT_H__*/

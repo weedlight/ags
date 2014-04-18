@@ -77,6 +77,7 @@ typedef enum{
   AGS_THREAD_LOCK_GREEDY_RUN_MUTEX   = 1 << 26,
   AGS_THREAD_SUSPENDED               = 1 << 27,
   AGS_THREAD_SINGLE_LOOP             = 1 << 28,
+  AGS_THREAD_READY                   = 1 << 29,
 }AgsThreadFlags;
 
 struct _AgsThread
@@ -124,7 +125,7 @@ struct _AgsThread
 
   AgsThread *children;
 
-  GObject *data;
+  gpointer data;
 };
 
 struct _AgsThreadClass
@@ -191,6 +192,6 @@ void ags_thread_resume(AgsThread *thread);
 void ags_thread_timelock(AgsThread *thread);
 void ags_thread_stop(AgsThread *thread);
 
-AgsThread* ags_thread_new(GObject *data);
+AgsThread* ags_thread_new(gpointer data);
 
 #endif /*__AGS_THREAD_H__*/

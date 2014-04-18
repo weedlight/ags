@@ -25,8 +25,9 @@
 
 #include <ags/audio/ags_channel.h>
 
-#include <ags/X/ags_line.h>
+#include <ags/widget/ags_expander_set.h>
 
+#include <ags/X/ags_line.h>
 
 #define AGS_TYPE_PAD                (ags_pad_get_type())
 #define AGS_PAD(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_PAD, AgsPad))
@@ -35,11 +36,17 @@
 #define AGS_IS_PAD_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_PAD))
 #define AGS_PAD_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_PAD, AgsPadClass))
 
+#define AGS_PAD_DEFAULT_VERSION "0.4.0-beta\0"
+#define AGS_PAD_DEFAULT_BUILD_ID "0.4.0\0"
+
 typedef struct _AgsPad AgsPad;
 typedef struct _AgsPadClass AgsPadClass;
 
 typedef enum{
-  AGS_PAD_CONNECTED   = 1,
+  AGS_PAD_CONNECTED           = 1,
+  AGS_PAD_SHOW_GROUPING       = 1 << 1,
+  AGS_PAD_GROUP_ALL           = 1 << 2,
+  AGS_PAD_GROUP_LINE          = 1 << 3,
 }AgsPadFlags;
 
 struct _AgsPad
@@ -48,10 +55,13 @@ struct _AgsPad
 
   guint flags;
 
-  AgsChannel *channel;
-  AgsLine *selected_line;
+  gchar *version;
+  gchar *build_id;
 
-  GtkOptionMenu *option;
+  AgsChannel *channel;
+
+  guint cols;
+  AgsExpanderSet *expander_set;
 
   GtkToggleButton *group;
   GtkToggleButton *mute;

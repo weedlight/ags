@@ -19,6 +19,8 @@
 #include <ags/X/machine/ags_drum_input_line_callbacks.h>
 #include <ags/X/machine/ags_drum.h>
 
+#include <ags-lib/object/ags_connectable.h>
+
 #include <ags/audio/ags_devout.h>
 #include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_input.h>
@@ -49,7 +51,48 @@ ags_drum_input_line_audio_set_pads_callback(AgsAudio *audio, GType type,
 {
   if(type == AGS_TYPE_OUTPUT){
     if(pads > pads_old){
-      ags_drum_input_line_map_recall(drum_input_line, pads_old);
+      AgsChannel *current, *output;
+      GList *recall;
+
+      output = audio->output;
+
+      while(output != NULL){
+	current = ags_channel_nth(audio->input,
+				  output->audio_channel);
+
+	while(current != NULL){
+	  recall = current->play;
+
+	  while(recall != NULL){
+	    if(AGS_IS_RECALL_CHANNEL_RUN(recall->data)){
+	      g_object_set(G_OBJECT(recall->data),
+			   "destination\0", output,
+			   NULL);
+	      ags_connectable_connect(AGS_CONNECTABLE(recall->data));
+	    }
+
+	    recall = recall->next;
+	  }
+
+	  recall = current->recall;
+
+	  while(recall != NULL){
+	    if(AGS_IS_RECALL_CHANNEL_RUN(recall->data)){
+	      g_object_set(G_OBJECT(recall->data),
+			   "destination\0", output,
+			   NULL);
+
+	      ags_connectable_connect(AGS_CONNECTABLE(recall->data));
+	    }
+
+	    recall = recall->next;
+	  }
+
+	  current = current->next_pad;
+	}
+
+	output = output->next;
+      }
     }else{
       /* empty */
     }
@@ -60,50 +103,46 @@ void
 ags_drum_input_line_play_channel_run_done(AgsRecall *recall, AgsDrumInputLine *drum_input_line)
 {
   AgsChannel *channel;
+  AgsDevoutPlay *devout_play;
+  AgsChannel *next_pad;
+  GList *current_recall;
+  gboolean all_done;
 
   g_message("ags_drum_input_line_play_channel_run_done\0");
 
   channel = AGS_LINE(drum_input_line)->channel;
 
-  if((AGS_DEVOUT_PLAY_DONE & (AGS_DEVOUT_PLAY(channel->devout_play)->flags)) != 0){
-    AgsChannel *next_pad;
-    gboolean all_done;
+  devout_play = AGS_DEVOUT_PLAY(channel->devout_play);
 
-    channel = ags_channel_nth(AGS_AUDIO(channel->audio)->input, channel->line - channel->audio_channel);
-    next_pad = channel->next_pad;
+  channel = ags_channel_nth(AGS_AUDIO(channel->audio)->input, channel->line - channel->audio_channel);
+  next_pad = channel->next_pad;
 
-    all_done = TRUE;
+  all_done = TRUE;
 
-    while(channel != next_pad){
-      if(!(AGS_DEVOUT_PLAY(channel->devout_play)->group_id == recall->recall_id->group_id &&
-	   ags_recall_is_done(AGS_RECALL_CONTAINER(recall->container)->recall_channel_run,
-			      recall->recall_id->group_id))){
-	all_done = FALSE;
-	break;
-      }
-
+  while(channel != next_pad){
+    if(AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0] != devout_play->recall_id[0]){
       channel = channel->next;
+      continue;
     }
 
-    if(all_done){
-      AgsDrumInputPad *drum_input_pad;
-
-      g_message("ags_drum_input_line_play_channel_run_done\0");
-      drum_input_pad = AGS_DRUM_INPUT_PAD(AGS_LINE(drum_input_line)->pad);
-
-      gtk_toggle_button_set_active(drum_input_pad->play, FALSE);
+    current_recall = channel->play;
+    
+    if(!ags_recall_is_done(current_recall,
+			   devout_play->recall_id[0])){
+      all_done = FALSE;
+      break;
     }
-  }else{
-    if(AGS_DEVOUT_PLAY(channel->devout_play)->group_id == recall->recall_id->group_id &&
-       ags_recall_is_done(AGS_RECALL_CONTAINER(recall->container)->recall_channel_run,
-			  recall->recall_id->group_id)){
-      AgsDrumInputPad *drum_input_pad;
+    
+    channel = channel->next;
+  }
 
-      g_message("ags_drum_input_line_play_channel_run_done\0");
-      drum_input_pad = AGS_DRUM_INPUT_PAD(AGS_LINE(drum_input_line)->pad);
+  if(all_done){
+    AgsDrumInputPad *drum_input_pad;
 
-      gtk_toggle_button_set_active(drum_input_pad->play, FALSE);
-    }
+    g_message("ags_drum_input_line_play_channel_run_done\0");
+    drum_input_pad = AGS_DRUM_INPUT_PAD(AGS_LINE(drum_input_line)->pad);
+
+    gtk_toggle_button_set_active(drum_input_pad->play, FALSE);
   }
 }
 

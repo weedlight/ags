@@ -28,12 +28,6 @@
 
 #include <ags/audio/file/ags_ipatch.h>
 
-#include <ags/audio/recall/ags_delay_audio.h>
-#include <ags/audio/recall/ags_delay_audio_run.h>
-#include <ags/audio/recall/ags_count_beats_audio.h>
-#include <ags/audio/recall/ags_count_beats_audio_run.h>
-#include <ags/audio/recall/ags_play_notation.h>
-
 #define AGS_TYPE_FFPLAYER                (ags_ffplayer_get_type())
 #define AGS_FFPLAYER(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_FFPLAYER, AgsFFPlayer))
 #define AGS_FFPLAYER_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST((class), AGS_TYPE_FFPLAYER, AgsFFPlayerClass))
@@ -48,17 +42,8 @@ struct _AgsFFPlayer
 {
   AgsMachine machine;
 
-  AgsDelayAudio *play_delay_audio;
-  AgsDelayAudioRun *play_delay_audio_run;
-  AgsCountBeatsAudio *play_count_beats_audio;
-  AgsCountBeatsAudioRun *play_count_beats_audio_run;
-  AgsPlayNotation *play_notation;
-
-  AgsDelayAudio *recall_delay_audio;
-  AgsDelayAudioRun *recall_delay_audio_run;
-  AgsCountBeatsAudio *recall_count_beats_audio;
-  AgsCountBeatsAudioRun *recall_count_beats_audio_run;
-  AgsPlayNotation *recall_notation;
+  guint mapped_output_pad;
+  guint mapped_input_pad;
 
   GtkButton *open;
 

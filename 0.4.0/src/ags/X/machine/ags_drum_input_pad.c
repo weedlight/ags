@@ -110,7 +110,7 @@ ags_drum_input_pad_init(AgsDrumInputPad *drum_input_pad)
   pad = (AgsPad *) drum_input_pad;
 
   hbox = (GtkHBox *) gtk_hbox_new(FALSE, 0);
-  gtk_box_pack_start((GtkBox *) pad, (GtkWidget *) hbox, TRUE, TRUE, 0);
+  gtk_box_pack_start((GtkBox *) pad, (GtkWidget *) hbox, FALSE, TRUE, 0);
   gtk_box_reorder_child((GtkBox *) pad, (GtkWidget *) hbox, 0);
 
   drum_input_pad->open = (GtkButton *) gtk_button_new();
@@ -128,6 +128,8 @@ ags_drum_input_pad_init(AgsDrumInputPad *drum_input_pad)
   drum_input_pad->pad_open_recalls = NULL;
 
   drum_input_pad->file_chooser = NULL;
+
+  drum_input_pad->pad_play_ref = 0;
 }
 
 void
@@ -149,9 +151,6 @@ ags_drum_input_pad_connect(AgsConnectable *connectable)
 
   g_signal_connect_after(G_OBJECT(drum_input_pad->play), "toggled\0",
 			 G_CALLBACK(ags_drum_input_pad_play_callback), (gpointer) drum_input_pad);
-
-  g_signal_connect(G_OBJECT(AGS_PAD(drum_input_pad)->option), "changed\0",
-		   G_CALLBACK(ags_drum_input_pad_option_callback), (gpointer) drum_input_pad);
 
   g_signal_connect(G_OBJECT(drum_input_pad->edit), "clicked\0",
 		   G_CALLBACK(ags_drum_input_pad_edit_callback), (gpointer) drum_input_pad);

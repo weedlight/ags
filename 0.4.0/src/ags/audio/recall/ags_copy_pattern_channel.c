@@ -17,12 +17,16 @@
  */
 
 #include <ags/audio/recall/ags_copy_pattern_channel.h>
-
 #include <ags/audio/recall/ags_copy_pattern_audio.h>
 #include <ags/audio/recall/ags_copy_pattern_audio_run.h>
 #include <ags/audio/recall/ags_copy_pattern_channel_run.h>
 
+#include <ags/main.h>
+
+#include <ags/object/ags_plugin.h>
+
 void ags_copy_pattern_channel_class_init(AgsCopyPatternChannelClass *copy_pattern_channel);
+void ags_copy_pattern_channel_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_copy_pattern_channel_init(AgsCopyPatternChannel *copy_pattern_channel);
 void ags_copy_pattern_channel_set_property(GObject *gobject,
 					   guint prop_id,
@@ -32,6 +36,7 @@ void ags_copy_pattern_channel_get_property(GObject *gobject,
 					   guint prop_id,
 					   GValue *value,
 					   GParamSpec *param_spec);
+void ags_copy_pattern_channel_set_ports(AgsPlugin *plugin, GList *port);
 void ags_copy_pattern_channel_finalize(GObject *gobject);
 
 enum{
@@ -40,6 +45,14 @@ enum{
 };
 
 static gpointer ags_copy_pattern_channel_parent_class = NULL;
+
+static const gchar *ags_copy_pattern_channel_plugin_name = "ags-copy-pattern\0";
+static const gchar *ags_copy_pattern_channel_specifier[] = {
+  "./pattern[0]\0"  
+};
+static const gchar *ags_copy_pattern_channel_control_port[] = {
+  "1/1\0"
+};
 
 GType
 ags_copy_pattern_channel_get_type()
@@ -59,13 +72,29 @@ ags_copy_pattern_channel_get_type()
       (GInstanceInitFunc) ags_copy_pattern_channel_init,
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_copy_pattern_channel_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };    
+
     ags_type_copy_pattern_channel = g_type_register_static(AGS_TYPE_RECALL_CHANNEL,
 							   "AgsCopyPatternChannel\0",
 							   &ags_copy_pattern_channel_info,
 							   0);
+
+    g_type_add_interface_static(ags_type_copy_pattern_channel,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_copy_pattern_channel);
+}
+
+void
+ags_copy_pattern_channel_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  plugin->set_ports = ags_copy_pattern_channel_set_ports;
 }
 
 void
@@ -88,7 +117,7 @@ ags_copy_pattern_channel_class_init(AgsCopyPatternChannelClass *copy_pattern_cha
   param_spec = g_param_spec_object("pattern\0",
 				   "pattern to play\0",
 				   "The pattern which has to be played\0",
-				   AGS_TYPE_PATTERN,
+				   AGS_TYPE_PORT,
 				   G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
 				  PROP_PATTERN,
@@ -98,9 +127,28 @@ ags_copy_pattern_channel_class_init(AgsCopyPatternChannelClass *copy_pattern_cha
 void
 ags_copy_pattern_channel_init(AgsCopyPatternChannel *copy_pattern_channel)
 {
-  AGS_RECALL(copy_pattern_channel)->flags |= AGS_RECALL_SEQUENCER;
+  GList *port;
 
-  copy_pattern_channel->pattern = NULL;
+  AGS_RECALL(copy_pattern_channel)->name = "ags-copy-pattern\0";
+  AGS_RECALL(copy_pattern_channel)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(copy_pattern_channel)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(copy_pattern_channel)->xml_type = "ags-copy-pattern-channel\0";
+  
+  port = NULL;
+
+  copy_pattern_channel->pattern = g_object_new(AGS_TYPE_PORT,
+					       "plugin-name\0", ags_copy_pattern_channel_plugin_name,
+					       "specifier\0", ags_copy_pattern_channel_specifier[0],
+					       "control-port\0", ags_copy_pattern_channel_control_port[0],
+					       "port-value-is-pointer\0", FALSE,
+					       "port-value-type\0", G_TYPE_OBJECT,
+					       NULL);
+
+  copy_pattern_channel->pattern->port_value.ags_port_object = NULL;
+
+  port = g_list_prepend(port, copy_pattern_channel->pattern);
+
+  AGS_RECALL(copy_pattern_channel)->port = port;
 }
 
 void
@@ -116,9 +164,9 @@ ags_copy_pattern_channel_set_property(GObject *gobject,
   switch(prop_id){
   case PROP_PATTERN:
     {
-      AgsPattern *pattern;
+      AgsPort *pattern;
 
-      pattern = (AgsPattern *) g_value_get_object(value);
+      pattern = (AgsPort *) g_value_get_object(value);
 
       if(copy_pattern_channel->pattern == pattern)
 	return;
@@ -161,14 +209,31 @@ ags_copy_pattern_channel_get_property(GObject *gobject,
 }
 
 void
+ags_copy_pattern_channel_set_ports(AgsPlugin *plugin, GList *port)
+{
+  while(port != NULL){
+    if(!strncmp(AGS_PORT(port->data)->specifier,
+		"./pattern[0]\0",
+		11)){
+      g_object_set(G_OBJECT(plugin),
+		   "pattern\0", AGS_PORT(port->data),
+		   NULL);
+    }
+
+    port = port->next;
+  }
+}
+
+void
 ags_copy_pattern_channel_finalize(GObject *gobject)
 {
   AgsCopyPatternChannel *copy_pattern_channel;
 
   copy_pattern_channel = AGS_COPY_PATTERN_CHANNEL(gobject);
 
-  if(AGS_RECALL_CHANNEL(copy_pattern_channel)->destination != NULL)
-    g_object_unref(G_OBJECT(AGS_RECALL_CHANNEL(copy_pattern_channel)->destination));
+  if(copy_pattern_channel->pattern != NULL){
+    g_object_unref(copy_pattern_channel->pattern);
+  }
 
   G_OBJECT_CLASS(ags_copy_pattern_channel_parent_class)->finalize(gobject);
 }
@@ -201,7 +266,7 @@ ags_copy_pattern_channel_template_find_source_and_destination(GList *recall,
 AgsCopyPatternChannel*
 ags_copy_pattern_channel_new(AgsChannel *destination,
 			     AgsChannel *source,
-			     AgsPattern *pattern)
+			     AgsPort *pattern)
 {
   AgsCopyPatternChannel *copy_pattern_channel;
 

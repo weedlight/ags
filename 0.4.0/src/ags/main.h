@@ -19,11 +19,20 @@
 #ifndef __AGS_MAIN_H__
 #define __AGS_MAIN_H__
 
+#ifdef AGS_WITH_XMLRPC_C
+#include <xmlrpc-c/base.h>
+#include <xmlrpc-c/abyss.h>
+#include <xmlrpc-c/server.h>
+#include <xmlrpc-c/server_abyss.h>
+#endif
+
 #include <glib.h>
 #include <glib-object.h>
 
 #include <ags/lib/ags_log.h>
 #include <ags/thread/ags_thread.h>
+#include <ags/thread/ags_thread_pool.h>
+#include <ags/server/ags_server.h>
 #include <ags/audio/ags_devout.h>
 #include <ags/X/ags_window.h>
 
@@ -34,22 +43,40 @@
 #define AGS_IS_MAIN_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_MAIN))
 #define AGS_MAIN_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS(obj, AGS_TYPE_MAIN, AgsMainClass))
 
-#define AGS_VERSION "0.3.99-SNAPSHOT"
+#define AGS_VERSION "0.4.0-beta\0"
+#define AGS_BUILD_ID "CEST 04-12-2013 03:07\0"
+#define AGS_EFFECTS_DEFAULT_VERSION "0.4.0-beta\0"
 
 #define __AGS_DEBUG__
-#define AGS_PRIORITY (0)
+#define AGS_PRIORITY (49)
 
 typedef struct _AgsMain AgsMain;
 typedef struct _AgsMainClass AgsMainClass;
+
+typedef enum{
+  AGS_MAIN_SINGLE_THREAD      = 1,
+  AGS_MAIN_CONNECTED          = 1 <<  1,
+}AgsMainFlags;
 
 struct _AgsMain
 {
   GObject object;
 
-  AgsThread *main_loop;
-  AgsThread *gui_loop;
+  guint flags;
 
-  AgsDevout *devout;
+  gchar *version;
+  gchar *build_id;
+
+#ifdef AGS_WITH_XMLRPC_C
+  xmlrpc_env env;
+#endif
+
+  AgsThread *main_loop;
+  AgsThreadPool *thread_pool;
+
+  AgsServer *server;
+
+  GList *devout;
 
   AgsWindow *window;
 
@@ -62,6 +89,17 @@ struct _AgsMainClass
 };
 
 GType ags_main_get_type();
+
+void ags_main_add_devout(AgsMain *main,
+			 AgsDevout *devout);
+
+void ags_main_register_thread_type();
+
+void ags_main_register_recall_type();
+void ags_main_register_task_type();
+
+void ags_main_register_widget_type();
+void ags_main_register_machine_type();
 
 void ags_main_quit(AgsMain *main);
 

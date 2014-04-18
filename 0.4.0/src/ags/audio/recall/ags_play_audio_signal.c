@@ -26,8 +26,10 @@
 #include <ags/audio/ags_recycling.h>
 #include <ags/audio/ags_channel.h>
 #include <ags/audio/ags_recall_id.h>
+#include <ags/audio/ags_recall_channel.h>
+#include <ags/audio/ags_recall_channel_run.h>
 
-#include <ags/audio/recall/ags_play_channel_run.h>
+#include <ags/audio/recall/ags_play_channel.h>
 
 #include <stdlib.h>
 
@@ -207,14 +209,17 @@ ags_play_audio_signal_run_init_pre(AgsRecall *recall)
 void
 ags_play_audio_signal_run_inter(AgsRecall *recall)
 {
-  AgsPlayAudioSignal *play_audio_signal;
   AgsDevout *devout;
   AgsRecycling *recycling;
   AgsAudioSignal *source;
+  AgsPlayChannel *play_channel;
+  AgsPlayAudioSignal *play_audio_signal;
   GList *stream;
   signed short *buffer0, *buffer1;
-  AgsAttack *attack;
   guint audio_channel;
+  gboolean muted;
+  GValue muted_value = {0,};
+  GValue audio_channel_value = {0,};
 
   play_audio_signal = AGS_PLAY_AUDIO_SIGNAL(recall);
 
@@ -250,17 +255,30 @@ ags_play_audio_signal_run_inter(AgsRecall *recall)
     return;
   }
 
-  audio_channel = AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->audio_channel;
-  attack = AGS_RECALL_AUDIO_SIGNAL(play_audio_signal)->attack;
+  play_channel = AGS_PLAY_CHANNEL(AGS_RECALL_CHANNEL_RUN(recall->parent->parent)->recall_channel);
 
+  g_value_init(&muted_value, G_TYPE_BOOLEAN);
+  ags_port_safe_read(play_channel->muted,
+		     &muted_value);
+
+  muted = g_value_get_boolean(&muted_value);
+
+  if(muted){
+    return;
+  }
+
+  g_value_init(&audio_channel_value, G_TYPE_UINT);
+  ags_port_safe_read(play_channel->audio_channel,
+		     &audio_channel_value);
+
+  audio_channel = g_value_get_uint(&audio_channel_value);
 
   if((AGS_RECALL_INITIAL_RUN & (AGS_RECALL_AUDIO_SIGNAL(recall)->flags)) != 0){
     AGS_RECALL_AUDIO_SIGNAL(recall)->flags &= (~AGS_RECALL_INITIAL_RUN);
-
-    ags_audio_signal_copy_buffer_to_buffer(&(buffer0[audio_channel + attack->first_start * devout->pcm_channels]),
+    ags_audio_signal_copy_buffer_to_buffer(&(buffer0[audio_channel + source->attack * devout->pcm_channels]),
 					   devout->pcm_channels,
 					   (signed short *) stream->data, 1,
-					   attack->first_length);
+					   AGS_DEVOUT_DEFAULT_BUFFER_SIZE - source->attack);
   }else{
     ags_audio_signal_copy_buffer_to_buffer(&(buffer0[audio_channel]), devout->pcm_channels,
 					   (signed short *) stream->data, 1,
@@ -287,8 +305,7 @@ ags_play_audio_signal_duplicate(AgsRecall *recall,
 AgsPlayAudioSignal*
 ags_play_audio_signal_new(AgsAudioSignal *source,
 			  AgsDevout *devout,
-			  guint audio_channel,
-			  AgsAttack *attack)
+			  guint audio_channel)
 {
   AgsPlayAudioSignal *play_audio_signal;
 
@@ -296,7 +313,6 @@ ags_play_audio_signal_new(AgsAudioSignal *source,
 							  "source\0", source,
 							  "devout\0", devout,
 							  "audio_channel\0", audio_channel,
-							  "attack\0", attack,
 							  NULL);
 
   return(play_audio_signal);

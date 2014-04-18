@@ -18,12 +18,17 @@
 
 #include <ags/audio/recall/ags_loop_channel.h>
 
+#include <ags/main.h>
+
 #include <ags-lib/object/ags_connectable.h>
+
+#include <ags/object/ags_plugin.h>
 
 #include <math.h>
 
 void ags_loop_channel_class_init(AgsLoopChannelClass *loop_channel);
 void ags_loop_channel_connectable_interface_init(AgsConnectableInterface *connectable);
+void ags_loop_channel_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_loop_channel_init(AgsLoopChannel *loop_channel);
 void ags_loop_channel_set_property(GObject *gobject,
 				   guint prop_id,
@@ -42,6 +47,7 @@ void ags_loop_channel_sequencer_duration_changed_callback(AgsDelayAudio *delay_a
 
 static gpointer ags_loop_channel_parent_class = NULL;
 static AgsConnectableInterface *ags_loop_channel_parent_connectable_interface;
+static AgsPluginInterface *ags_loop_channel_parent_plugin_interface;
 
 enum{
   PROP_0,
@@ -71,6 +77,12 @@ ags_loop_channel_get_type()
       NULL, /* interface_finalize */
       NULL, /* interface_data */
     };
+
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_loop_channel_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
     
     ags_type_loop_channel = g_type_register_static(AGS_TYPE_RECALL_CHANNEL,
 						   "AgsLoopChannel\0",
@@ -80,6 +92,10 @@ ags_loop_channel_get_type()
     g_type_add_interface_static(ags_type_loop_channel,
 				AGS_TYPE_CONNECTABLE,
 				&ags_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_loop_channel,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return (ags_type_loop_channel);
@@ -103,7 +119,7 @@ ags_loop_channel_class_init(AgsLoopChannelClass *loop_channel)
   gobject->finalize = ags_loop_channel_finalize;
 
   /* properties */
-  param_spec = g_param_spec_object("delay_audio\0",
+  param_spec = g_param_spec_object("delay-audio\0",
 				   "assigned delay-audio\0",
 				   "The delay-audio it is assigned with\0",
 				   AGS_TYPE_DELAY_AUDIO,
@@ -123,8 +139,20 @@ ags_loop_channel_connectable_interface_init(AgsConnectableInterface *connectable
 }
 
 void
+ags_loop_channel_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  ags_loop_channel_parent_plugin_interface = g_type_interface_peek_parent(plugin);
+}
+
+void
 ags_loop_channel_init(AgsLoopChannel *loop_channel)
 {
+  AGS_RECALL(loop_channel)->name = "ags-loop\0";
+  AGS_RECALL(loop_channel)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(loop_channel)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(loop_channel)->xml_type = "ags-loop-channel\0";
+  AGS_RECALL(loop_channel)->port = NULL;
+
   loop_channel->delay_audio = NULL;
   loop_channel->sequencer_duration_changed_handler = 0;
 }
@@ -149,12 +177,20 @@ ags_loop_channel_set_property(GObject *gobject,
       if(loop_channel->delay_audio == delay_audio)
 	return;
 
-      if(loop_channel->delay_audio != NULL)
+      if(loop_channel->delay_audio != NULL){
 	g_object_unref(G_OBJECT(loop_channel->delay_audio));
-
-      if(delay_audio != NULL)
-	g_object_ref(G_OBJECT(delay_audio));
 	
+	g_signal_handler_disconnect(G_OBJECT(loop_channel),
+				    loop_channel->sequencer_duration_changed_handler);
+      }
+
+      if(delay_audio != NULL){
+	g_object_ref(G_OBJECT(delay_audio));
+
+	loop_channel->sequencer_duration_changed_handler = g_signal_connect(G_OBJECT(delay_audio), "sequencer-duration-changed\0",
+									    G_CALLBACK(ags_loop_channel_sequencer_duration_changed_callback), loop_channel);
+      }
+
       loop_channel->delay_audio = delay_audio;
     }
     break;
@@ -210,7 +246,7 @@ ags_loop_channel_connect(AgsConnectable *connectable)
   loop_channel = AGS_LOOP_CHANNEL(connectable);
 
   if(loop_channel->delay_audio != NULL){
-    loop_channel->sequencer_duration_changed_handler = g_signal_connect(G_OBJECT(loop_channel->delay_audio), "sequencer_duration_changed\0",
+    loop_channel->sequencer_duration_changed_handler = g_signal_connect(G_OBJECT(loop_channel->delay_audio), "sequencer-duration-changed\0",
 									G_CALLBACK(ags_loop_channel_sequencer_duration_changed_callback), loop_channel);
   }
 }
@@ -231,14 +267,23 @@ ags_loop_channel_disconnect(AgsConnectable *connectable)
   }
 }
 
-
 void
 ags_loop_channel_sequencer_duration_changed_callback(AgsDelayAudio *delay_audio,
 						     AgsLoopChannel *loop_channel)
 {
+  GList *list;
+  AgsRecycling *recycling;
+  gdouble sequencer_duration;
+  GValue value = {0,};
+
+  g_value_init(&value, G_TYPE_DOUBLE);
+  ags_port_safe_read(delay_audio->sequencer_duration, &value);
+
+  sequencer_duration = g_value_get_double(&value);
+
   /* resize audio signal */
-  ags_channel_resize_audio_signal(AGS_RECALL_CHANNEL(loop_channel)->source,
-				  (guint) ceil(delay_audio->sequencer_duration * delay_audio->sequencer_delay));
+  ags_channel_safe_resize_audio_signal(AGS_RECALL_CHANNEL(loop_channel)->source,
+				       (guint) sequencer_duration);
 }
 
 AgsLoopChannel*

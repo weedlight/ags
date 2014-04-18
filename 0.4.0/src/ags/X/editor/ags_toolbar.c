@@ -20,6 +20,8 @@
 #include <ags/X/editor/ags_toolbar_callbacks.h>
 #include <ags/X/editor/ags_toolbar_mode_stock.h>
 
+#include <ags-lib/object/ags_connectable.h>
+
 #include <ags/X/ags_menu_bar.h>
 
 #include <gtk/gtkhbox.h>
@@ -34,37 +36,61 @@
 #include <gtk/gtkstock.h>
 
 void ags_toolbar_class_init(AgsToolbarClass *toolbar);
+void ags_toolbar_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_toolbar_init(AgsToolbar *toolbar);
-void ags_toolbar_connect(AgsToolbar *toolbar);
+void ags_toolbar_connect(AgsConnectable *connectable);
+void ags_toolbar_disconnect(AgsConnectable *connectable);
 void ags_toolbar_destroy(GtkObject *object);
 void ags_toolbar_show(GtkWidget *widget);
 
 GType
 ags_toolbar_get_type(void)
 {
-  static GType toolbar_type = 0;
+  static GType ags_type_toolbar = 0;
 
-  if (!toolbar_type){
-    static const GtkTypeInfo toolbar_info = {
-      "AgsToolbar\0",
-      sizeof(AgsToolbar), /* base_init */
-      sizeof(AgsToolbarClass), /* base_finalize */
-      (GtkClassInitFunc) ags_toolbar_class_init,
-      (GtkObjectInitFunc) ags_toolbar_init,
+  if (!ags_type_toolbar){
+    static const GTypeInfo ags_toolbar_info = {
+      sizeof (AgsToolbarClass),
+      NULL, /* base_init */
+      NULL, /* base_finalize */
+      (GClassInitFunc) ags_toolbar_class_init,
       NULL, /* class_finalize */
       NULL, /* class_data */
-      (GtkClassInitFunc) NULL,
+      sizeof (AgsToolbar),
+      0,    /* n_preallocs */
+      (GInstanceInitFunc) ags_toolbar_init,
     };
 
-    toolbar_type = gtk_type_unique (GTK_TYPE_TOOLBAR, &toolbar_info);
+    static const GInterfaceInfo ags_connectable_interface_info = {
+      (GInterfaceInitFunc) ags_toolbar_connectable_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
+    ags_type_toolbar = g_type_register_static(GTK_TYPE_TOOLBAR,
+					    "AgsToolbar\0", &ags_toolbar_info,
+					    0);
+    
+    g_type_add_interface_static(ags_type_toolbar,
+				AGS_TYPE_CONNECTABLE,
+				&ags_connectable_interface_info);
   }
 
-  return (toolbar_type);
+  return (ags_type_toolbar);
 }
 
 void
 ags_toolbar_class_init(AgsToolbarClass *toolbar)
 {
+}
+
+void
+ags_toolbar_connectable_interface_init(AgsConnectableInterface *connectable)
+{
+  connectable->is_ready = NULL;
+  connectable->is_connected = NULL;
+  connectable->connect = ags_toolbar_connect;
+  connectable->disconnect = ags_toolbar_disconnect;
 }
 
 void
@@ -118,6 +144,7 @@ ags_toolbar_init(AgsToolbar *toolbar)
 					      NULL);
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) toolbar->paste, "paste notes\0", NULL);
 
+  /* zoom */
   label = (GtkLabel *) gtk_label_new("zoom\0");
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) label, NULL, NULL);
 
@@ -127,6 +154,7 @@ ags_toolbar_init(AgsToolbar *toolbar)
   gtk_option_menu_set_history(toolbar->zoom, 6);
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) toolbar->zoom, NULL , NULL);
 
+  /* tact */
   label = (GtkLabel *) gtk_label_new("tact\0");
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) label, NULL, NULL);
 
@@ -136,26 +164,38 @@ ags_toolbar_init(AgsToolbar *toolbar)
   gtk_option_menu_set_history(toolbar->tact, 4);
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) toolbar->tact, NULL, NULL);
 
+  /* edit modes */
   label = (GtkLabel *) gtk_label_new("mode\0");
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) label, NULL, NULL);
 
   menu = (GtkMenu *) gtk_menu_new();
 
   item = (GtkMenuItem *) gtk_menu_item_new_with_label(AGS_TOOLBAR_MODE_SINGLE_CHANNEL);
+  gtk_widget_set_state(GTK_WIDGET(item),
+		       GTK_STATE_INSENSITIVE);
   gtk_menu_shell_append((GtkMenuShell *) menu, (GtkWidget *) item);
 
-  item = (GtkMenuItem *) gtk_menu_item_new_with_label(AGS_TOOLBAR_MODE_GROUP_CHANNELS);
+  item = (GtkMenuItem *) gtk_menu_item_new_with_label(AGS_TOOLBAR_MODE_MULTI_CHANNEL);
+  gtk_menu_shell_append((GtkMenuShell *) menu, (GtkWidget *) item);
+
+  item = (GtkMenuItem *) gtk_menu_item_new_with_label(AGS_TOOLBAR_MODE_ALL_CHANNELS);
+  gtk_widget_set_state(GTK_WIDGET(item),
+		       GTK_STATE_INSENSITIVE);
   gtk_menu_shell_append((GtkMenuShell *) menu, (GtkWidget *) item);
 
   toolbar->mode = (GtkOptionMenu *) gtk_option_menu_new();
   gtk_option_menu_set_menu(toolbar->mode, (GtkWidget *) menu);
+  gtk_option_menu_set_history(toolbar->mode,
+			      1);
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) toolbar->mode, NULL, NULL);
 }
 
 void
-ags_toolbar_connect(AgsToolbar *toolbar)
+ags_toolbar_connect(AgsConnectable *connectable)
 {
-  GList *list;
+  AgsToolbar *toolbar;
+
+  toolbar = AGS_TOOLBAR(connectable);
 
   g_signal_connect((GObject *) toolbar, "destroy\0",
 		   G_CALLBACK(ags_toolbar_destroy_callback), (gpointer) toolbar);
@@ -163,6 +203,7 @@ ags_toolbar_connect(AgsToolbar *toolbar)
   g_signal_connect((GObject *) toolbar, "show\0",
 		   G_CALLBACK(ags_toolbar_show_callback), (gpointer) toolbar);
 
+  /* tool */
   g_signal_connect_after((GObject *) toolbar->position, "toggled\0",
 			 G_CALLBACK(ags_toolbar_position_callback), (gpointer) toolbar);
 
@@ -175,6 +216,7 @@ ags_toolbar_connect(AgsToolbar *toolbar)
   g_signal_connect_after((GObject *) toolbar->select, "toggled\0",
 			 G_CALLBACK(ags_toolbar_select_callback), (gpointer) toolbar);
 
+  /* edit */
   g_signal_connect((GObject *) toolbar->copy, "clicked\0",
 		   G_CALLBACK(ags_toolbar_copy_or_cut_callback), (gpointer) toolbar);
 
@@ -184,19 +226,22 @@ ags_toolbar_connect(AgsToolbar *toolbar)
   g_signal_connect((GObject *) toolbar->paste, "clicked\0",
 		   G_CALLBACK(ags_toolbar_paste_callback), (gpointer) toolbar);
 
+  /* zoom */
   g_signal_connect_after((GObject *) toolbar->zoom, "changed\0",
 			 G_CALLBACK(ags_toolbar_zoom_callback), (gpointer) toolbar);
 
+  /* tact */
   g_signal_connect_after((GObject *) toolbar->tact, "changed\0",
 			 G_CALLBACK(ags_toolbar_tact_callback), (gpointer) toolbar);
 
-  list = gtk_container_get_children((GtkContainer *) gtk_option_menu_get_menu(toolbar->mode));
-  g_signal_connect((GObject *) list->data, "activate\0",
-		   G_CALLBACK(ags_toolbar_mode_default_callback), (gpointer) toolbar);
+  /* mode */
+  g_signal_connect_after((GObject *) toolbar->mode, "changed\0",
+			 G_CALLBACK(ags_toolbar_mode_callback), (gpointer) toolbar);
+}
 
-  list = list->next;
-  g_signal_connect((GObject *) list->data, "activate\0",
-		   G_CALLBACK(ags_toolbar_mode_group_channels_callback), (gpointer) toolbar);
+void
+ags_toolbar_disconnect(AgsConnectable *connectable)
+{
 }
 
 void

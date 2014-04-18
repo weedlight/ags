@@ -26,13 +26,25 @@
 void ags_recall_id_class_init(AgsRecallIDClass *recall_id);
 void ags_recall_id_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_recall_id_init(AgsRecallID *recall_id);
+void ags_recall_id_set_property(GObject *gobject,
+				guint prop_id,
+				const GValue *value,
+				GParamSpec *param_spec);
+void ags_recall_id_get_property(GObject *gobject,
+				guint prop_id,
+				GValue *value,
+				GParamSpec *param_spec);
 void ags_recall_id_connect(AgsConnectable *connectable);
 void ags_recall_id_disconnect(AgsConnectable *connectable);
 void ags_recall_id_finalize(GObject *gobject);
 
-static gpointer ags_recall_id_parent_class = NULL;
+enum{
+  PROP_0,
+  PROP_RECYCLING,
+  PROP_RECYCLING_CONTAINER,
+};
 
-static guint ags_recall_id_counter = 1;
+static gpointer ags_recall_id_parent_class = NULL;
 
 GType
 ags_recall_id_get_type(void)
@@ -75,11 +87,36 @@ void
 ags_recall_id_class_init(AgsRecallIDClass *recall_id)
 {
   GObjectClass *gobject;
+  GParamSpec *param_spec;
 
   ags_recall_id_parent_class = g_type_class_peek_parent(recall_id);
 
+  /* GObjectClass */
   gobject = (GObjectClass *) recall_id;
+
+  gobject->set_property = ags_recall_id_set_property;
+  gobject->get_property = ags_recall_id_get_property;
+
   gobject->finalize = ags_recall_id_finalize;
+
+  /* properties */
+  param_spec = g_param_spec_object("recycling\0",
+				   "assigned recycling\0",
+				   "The recycling it is assigned with\0",
+				   G_TYPE_OBJECT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_RECYCLING,
+				  param_spec);
+
+  param_spec = g_param_spec_object("recycling_container\0",
+				   "assigned recycling container\0",
+				   "The recycling container it is assigned with\0",
+				   G_TYPE_OBJECT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_RECYCLING_CONTAINER,
+				  param_spec);
 }
 
 void
@@ -94,12 +131,88 @@ ags_recall_id_init(AgsRecallID *recall_id)
 {
   recall_id->flags = 0;
 
-  recall_id->parent_group_id = 0;
-  recall_id->group_id = 0;
-  recall_id->child_group_id = 0;
+  recall_id->recycling = NULL;
+  recall_id->recycling_container = NULL;
+}
 
-  recall_id->first_recycling = NULL;
-  recall_id->last_recycling = NULL;
+void
+ags_recall_id_set_property(GObject *gobject,
+			   guint prop_id,
+			   const GValue *value,
+			   GParamSpec *param_spec)
+{
+  AgsRecallID *recall_id;
+
+  recall_id = AGS_RECALL_ID(gobject);
+
+  switch(prop_id){
+  case PROP_RECYCLING:
+    {
+      AgsRecycling *recycling;
+
+      recycling = g_value_get_object(value);
+
+      if(recall_id->recycling == recycling)
+	return;
+
+      if(recall_id->recycling != NULL){
+	g_object_unref(recycling);
+      }
+
+      if(recycling != NULL){
+	g_object_ref(recycling);
+      }
+
+      recall_id->recycling = recycling;
+    }
+    break;
+  case PROP_RECYCLING_CONTAINER:
+    {
+      AgsRecyclingContainer *recycling_container;
+
+      recycling_container = g_value_get_object(value);
+
+      if(recall_id->recycling_container == recycling_container)
+	return;
+
+      if(recall_id->recycling_container != NULL){
+	g_object_unref(recall_id->recycling_container);
+      }
+
+      if(recycling_container != NULL){
+	g_object_ref(recycling_container);
+      }
+
+      recall_id->recycling_container = recycling_container;
+    }
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, param_spec);
+    break;
+  }
+}
+
+void
+ags_recall_id_get_property(GObject *gobject,
+			   guint prop_id,
+			   GValue *value,
+			   GParamSpec *param_spec)
+{
+  AgsRecallID *recall_id;
+
+  recall_id = AGS_RECALL_ID(gobject);
+
+  switch(prop_id){
+  case PROP_RECYCLING:
+    g_value_set_object(value, recall_id->recycling);
+    break;
+  case PROP_RECYCLING_CONTAINER:
+    g_value_set_object(value, recall_id->recycling_container);
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, param_spec);
+    break;
+  }
 }
 
 void
@@ -121,25 +234,6 @@ ags_recall_id_finalize(GObject *gobject)
 }
 
 /**
- * ags_recall_id_generate_group_id:
- * 
- * Generate a new AgsGroupId
- */
-AgsGroupId
-ags_recall_id_generate_group_id()
-{
-  AgsGroupId group_id;
-
-  group_id = ags_recall_id_counter;
-  ags_recall_id_counter++;
-
-  if(ags_recall_id_counter == G_MAXULONG)
-    g_warning("WARNING: ags_recall_id_generate_group_id - counter expired\n\0");
-
-  return(group_id);
-}
-
-/**
  * ags_recall_id_get_run_stage:
  * @id the #AgsRecallID to check
  * @stage the current run stage to check against
@@ -153,18 +247,19 @@ ags_recall_id_get_run_stage(AgsRecallID *id, gint stage)
 {
   switch(stage){
   case 0:
-    if((AGS_RECALL_ID_RUN_PRE_SYNC_ASYNC_DONE & (id->flags)) == 0)
+    if((AGS_RECALL_ID_PRE & (id->flags)) == 0)
       return(TRUE);
 
     break;
   case 1:
-    if((AGS_RECALL_ID_RUN_INTER_SYNC_ASYNC_DONE & (id->flags)) == 0)
+    if((AGS_RECALL_ID_INTER & (id->flags)) == 0)
       return(TRUE);
 
     break;
   case 2:
-    if((AGS_RECALL_ID_RUN_POST_SYNC_ASYNC_DONE & (id->flags)) == 0)
+    if((AGS_RECALL_ID_POST & (id->flags)) == 0)
       return(TRUE);
+    break;
   }
 
   return(FALSE);
@@ -183,11 +278,11 @@ ags_recall_id_set_run_stage(AgsRecallID *recall_id, gint stage)
   guint i;
 
   if(stage == 0){
-    recall_id->flags |= AGS_RECALL_ID_RUN_PRE_SYNC_ASYNC_DONE;
+    recall_id->flags |= AGS_RECALL_ID_PRE;
   }else if(stage == 1){
-    recall_id->flags |= AGS_RECALL_ID_RUN_INTER_SYNC_ASYNC_DONE;
+    recall_id->flags |= AGS_RECALL_ID_INTER;
   }else{
-    recall_id->flags |= AGS_RECALL_ID_RUN_POST_SYNC_ASYNC_DONE;
+    recall_id->flags |= AGS_RECALL_ID_POST;
   }
 }
 
@@ -202,48 +297,27 @@ void
 ags_recall_id_unset_run_stage(AgsRecallID *recall_id, gint stage)
 {
   if(stage == 0){
-    recall_id->flags &= (~AGS_RECALL_ID_RUN_PRE_SYNC_ASYNC_DONE);
+    recall_id->flags &= (~AGS_RECALL_ID_PRE);
   }else if(stage == 1){
-    recall_id->flags &= (~AGS_RECALL_ID_RUN_INTER_SYNC_ASYNC_DONE);
+    recall_id->flags &= (~AGS_RECALL_ID_INTER);
   }else{
-    recall_id->flags &= (~AGS_RECALL_ID_RUN_POST_SYNC_ASYNC_DONE);
+    recall_id->flags &= (~AGS_RECALL_ID_POST);
   }
 }
 
 /**
  * ags_recall_id_add:
  * @recall_id_list the #GList the new #AgsRecall should be added
- * @parent_group_id the parent #AgsGroupId
- * @group_id the #AgsGroupId
- * @child_group_id the child #AgsGroupId
- * @first_recycling the first #AgsRecycling this #AgsRecallID belongs to
- * @last_recycling the last #AgsRecycling this #AgsRecallID belongs to
- * @higher_level_is_recall set to TRUE if above the next #AgsRecycling is still recall
- * and not play
+ * @recall_id the #AgsRecallID to add
  * Returns: the newly allocated #GList which is the new start of the #GList, too.
  *
  * Adds an #AgsRecallID with given properties to the passed #GList.
  */
 GList*
 ags_recall_id_add(GList *recall_id_list,
-		  AgsGroupId parent_group_id, AgsGroupId group_id, AgsGroupId child_group_id,
-		  AgsRecycling *first_recycling, AgsRecycling *last_recycling,
-		  gboolean higher_level_is_recall)
+		  AgsRecallID *recall_id)
 {
-  AgsRecallID *recall_id;
   GList *list;
-
-  recall_id = ags_recall_id_new();
-
-  if(higher_level_is_recall)
-    recall_id->flags |= AGS_RECALL_ID_HIGHER_LEVEL_IS_RECALL;
-
-  recall_id->parent_group_id = parent_group_id;
-  recall_id->group_id = group_id;
-  recall_id->child_group_id = child_group_id;
-
-  recall_id->first_recycling = first_recycling;
-  recall_id->last_recycling = last_recycling;
 
   list = g_list_prepend(recall_id_list,
 			(gpointer) recall_id);
@@ -251,110 +325,46 @@ ags_recall_id_add(GList *recall_id_list,
   return(list);
 }
 
-/**
- * ags_recall_id_find_group_id:
- * @recall_id_list the #GList to search within
- * @group_id the #AgsGroupId to search for
- * Returns: the #AgsRecallID containing @group_id if found otherwise %NULL
- * 
- * Find the first occurence of @group_id within a #GList of #AgsRecallID.
- */
 AgsRecallID*
-ags_recall_id_find_group_id(GList *recall_id_list, AgsGroupId group_id)
-{
-  while(recall_id_list != NULL){
-    if(AGS_RECALL_ID(recall_id_list->data)->group_id == group_id){
-      return((AgsRecallID *) recall_id_list->data);
-    }
-
-    recall_id_list = recall_id_list->next;
-  }
-
-  return(NULL);
-}
-
-/**
- * ags_recall_id_find_group_id_with_recycling:
- * @recall_id_list the #GList to search within
- * @group_id the #AgsGroupId to search for
- * @first_recycling the first #AgsRecycling
- * @last_recycling the last #AgsRecycling
- * Returns: the #AgsRecallID containing @group_id, @first_recycling and @last_recycling
- * if found otherwise %NULL
- *
- * Find the unique occurence of @group_id, @first_recycling and @last_recycling within a
- * #GList of #AgsRecallID.
- */
-AgsRecallID*
-ags_recall_id_find_group_id_with_recycling(GList *recall_id_list,
-					   AgsGroupId group_id,
-					   AgsRecycling *first_recycling, AgsRecycling *last_recycling)
-{
-  while(recall_id_list != NULL){
-    if(AGS_RECALL_ID(recall_id_list->data)->group_id == group_id &&
-       AGS_RECALL_ID(recall_id_list->data)->first_recycling == first_recycling &&
-       AGS_RECALL_ID(recall_id_list->data)->last_recycling == last_recycling){
-      return((AgsRecallID *) recall_id_list->data);
-    }
-
-    recall_id_list = recall_id_list->next;
-  }
-
-  //  printf("ags_recall_id_find_group_id_with_recycling: couldn't find matching recall id\n\0");
-
-  return(NULL);
-}
-
-/**
- * ags_recall_id_find_parent_group_id:
- * @recall_id_list the #GList to search within
- * @parent_group_id the #AgsGroupId to search for
- *
- * Find the first occurence of @parent_group_id within a #GList of #AgsRecallID.
- */
-AgsRecallID*
-ags_recall_id_find_parent_group_id(GList *recall_id_list, AgsGroupId parent_group_id)
-{
-  while(recall_id_list != NULL){
-    if(AGS_RECALL_ID(recall_id_list->data)->parent_group_id == parent_group_id)
-      return((AgsRecallID *) recall_id_list->data);
-
-    recall_id_list = recall_id_list->next;
-  }
-
-  return(NULL);
-}
-
-/**
- * ags_recall_id_reset_recycling:
- * @recall_ids
- * @old_first_recycling
- * @first_recycling
- * @last_recycling
- *
- *
- */
-void
-ags_recall_id_reset_recycling(GList *recall_ids,
-			      AgsRecycling *old_first_recycling,
-			      AgsRecycling *first_recycling, AgsRecycling *last_recycling)
+ags_recall_id_find_recycling_container(GList *recall_id_list,
+				       AgsRecyclingContainer *recycling_container)
 {
   AgsRecallID *recall_id;
 
-  while(recall_ids != NULL){
-    recall_id = AGS_RECALL_ID(recall_ids->data);
-    
-    if(recall_id->first_recycling == old_first_recycling){
-      recall_id->first_recycling = first_recycling;
-      recall_id->last_recycling = last_recycling;
+  while(recall_id_list != NULL){
+    recall_id = AGS_RECALL_ID(recall_id_list->data);
+
+    if(recall_id->recycling_container == recycling_container){
+      return(recall_id);
     }
 
-    recall_ids = recall_ids->next;
+    recall_id_list = recall_id_list->next;
   }
+
+  return(NULL);
 }
 
 AgsRecallID*
-ags_recall_id_new()
+ags_recall_id_find_parent_recycling_container(GList *recall_id_list,
+					      AgsRecyclingContainer *parent_recycling_container)
+{
+  AgsRecallID *recall_id;
+
+  while(recall_id_list != NULL){
+    recall_id = AGS_RECALL_ID(recall_id_list->data);
+
+    if(recall_id->recycling_container->parent == parent_recycling_container){
+      return(recall_id);
+    }
+
+    recall_id_list = recall_id_list->next;
+  }
+
+  return(NULL);
+}
+
+AgsRecallID*
+ags_recall_id_new(AgsRecycling *recycling)
 {
   AgsRecallID *recall_id;
 

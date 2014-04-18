@@ -105,8 +105,9 @@ ags_init_channel_init(AgsInitChannel *init_channel)
   init_channel->channel = NULL;
   init_channel->play_pad = FALSE;
 
-  init_channel->group_id = 0;
-  init_channel->child_group_id = 0;
+  init_channel->recall_id[0] = NULL;
+  init_channel->recall_id[1] = NULL;
+  init_channel->recall_id[2] = NULL;
 
   init_channel->playback = FALSE;
   init_channel->sequencer = FALSE;
@@ -140,15 +141,16 @@ ags_init_channel_finalize(GObject *gobject)
 void
 ags_init_channel_launch(AgsTask *task)
 {
+  AgsChannel *channel;
   AgsInitChannel *init_channel;
 
   init_channel = AGS_INIT_CHANNEL(task);
 
   /* init channel */
   if(init_channel->play_pad){
-    AgsChannel *channel, *next_pad;
+    AgsChannel *next_pad;
     gint stage;
-    gboolean arrange_group_id, duplicate_templates, resolve_dependencies;
+    gboolean arrange_recall_id, duplicate_templates, resolve_dependencies;
 
     next_pad = init_channel->channel->next_pad;
 
@@ -156,40 +158,122 @@ ags_init_channel_launch(AgsTask *task)
       channel = init_channel->channel;
       
       if(stage == 0){
-	arrange_group_id = TRUE;
+	arrange_recall_id = TRUE;
 	duplicate_templates = TRUE;
 	resolve_dependencies = TRUE;
       }else{
-	arrange_group_id = FALSE;
+	arrange_recall_id = FALSE;
 	duplicate_templates = FALSE;
 	resolve_dependencies = FALSE;
       }
       
       while(channel != next_pad){
-	if(stage == 0)
-	  AGS_DEVOUT_PLAY(channel->devout_play)->group_id = init_channel->group_id;
+	if(stage == 0){
+	  if(init_channel->playback){
+	    AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0] = init_channel->recall_id[0];
+	    AGS_DEVOUT_PLAY(channel->devout_play)->flags |= AGS_DEVOUT_PLAY_PLAYBACK;
+
+	    ags_channel_recursive_play_init(channel, stage,
+					    arrange_recall_id, duplicate_templates,
+					    TRUE, FALSE, FALSE,
+					    resolve_dependencies,
+					    init_channel->recall_id[0]);
+	  }
+	  
+	  if(init_channel->sequencer){
+	    AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[1] = init_channel->recall_id[1];
+	    AGS_DEVOUT_PLAY(channel->devout_play)->flags |= AGS_DEVOUT_PLAY_SEQUENCER;
+
+	    ags_channel_recursive_play_init(channel, stage,
+					    arrange_recall_id, duplicate_templates,
+					    FALSE, TRUE, FALSE,
+					    resolve_dependencies,
+					    init_channel->recall_id[0]);
+	  }
+	  
+	  if(init_channel->notation){
+	    AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[2] = init_channel->recall_id[2];
+	    AGS_DEVOUT_PLAY(channel->devout_play)->flags |= AGS_DEVOUT_PLAY_NOTATION;
+
+	    ags_channel_recursive_play_init(channel, stage,
+					    arrange_recall_id, duplicate_templates,
+					    FALSE, FALSE, TRUE,
+					    resolve_dependencies,
+					    init_channel->recall_id[0]);
+	  }
+	}else{
+	  if(init_channel->playback){
+	    ags_channel_recursive_play_init(channel, stage,
+					    arrange_recall_id, duplicate_templates,
+					    FALSE, FALSE, TRUE,
+					    resolve_dependencies,
+					    init_channel->recall_id[0]);
+	  }
+
+	  if(init_channel->sequencer){
+	    ags_channel_recursive_play_init(channel, stage,
+					    arrange_recall_id, duplicate_templates,
+					    FALSE, TRUE, FALSE,
+					    resolve_dependencies,
+					    init_channel->recall_id[1]);	
+	  }
+
+	  if(init_channel->notation){
+	    ags_channel_recursive_play_init(channel, stage,
+					    arrange_recall_id, duplicate_templates,
+					    FALSE, FALSE, TRUE,
+					    resolve_dependencies,
+					    init_channel->recall_id[2]);
 	
-	ags_channel_recursive_play_init(channel, stage,
-					arrange_group_id, duplicate_templates, TRUE, FALSE, FALSE, resolve_dependencies,
-					init_channel->group_id, init_channel->child_group_id,
-					0);
-	
+	  }	  
+	}
+
 	channel = channel->next;
       }
     }
   }else{
-    AGS_DEVOUT_PLAY(init_channel->channel->devout_play)->group_id = init_channel->group_id;
+    AgsRecallID *recall_id;
 
-    ags_channel_recursive_play_init(init_channel->channel, -1,
-				    TRUE, TRUE, TRUE, FALSE, FALSE, TRUE,
-				    init_channel->group_id, init_channel->child_group_id,
-				    0);
+    channel = init_channel->channel;
+
+    if(init_channel->playback){
+      ags_channel_recursive_play_init(init_channel->channel, -1,
+				      TRUE, TRUE,
+				      TRUE, FALSE, FALSE,
+				      TRUE,
+				      init_channel->recall_id[0]);
+      AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0] = init_channel->recall_id[0];
+    
+      AGS_DEVOUT_PLAY(channel->devout_play)->flags |= AGS_DEVOUT_PLAY_PLAYBACK;
+    }
+
+    if(init_channel->sequencer){
+      ags_channel_recursive_play_init(init_channel->channel, -1,
+				      TRUE, TRUE,
+				      FALSE, TRUE, FALSE,
+				      TRUE,
+				      init_channel->recall_id[1]);
+      AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[1] = init_channel->recall_id[1];
+    
+      AGS_DEVOUT_PLAY(channel->devout_play)->flags |= AGS_DEVOUT_PLAY_SEQUENCER;
+    }
+
+    if(init_channel->notation){
+      ags_channel_recursive_play_init(init_channel->channel, -1,
+				      TRUE, TRUE,
+				      FALSE, FALSE, TRUE,
+				      TRUE,
+				      init_channel->recall_id[2]);
+      AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[2] = init_channel->recall_id[2];
+    
+      AGS_DEVOUT_PLAY(channel->devout_play)->flags |= AGS_DEVOUT_PLAY_NOTATION;
+    }
   }
 }
 
 AgsInitChannel*
 ags_init_channel_new(AgsChannel *channel, gboolean play_pad,
-		     AgsGroupId group_id, AgsGroupId child_group_id,
+		     AgsRecallID *recall_id[3],
 		     gboolean playback, gboolean sequencer, gboolean notation)
 {
   AgsInitChannel *init_channel;
@@ -200,8 +284,9 @@ ags_init_channel_new(AgsChannel *channel, gboolean play_pad,
   init_channel->channel = channel;
   init_channel->play_pad = play_pad;
 
-  init_channel->group_id = group_id;
-  init_channel->child_group_id = child_group_id;
+  init_channel->recall_id[0] = recall_id[0];
+  init_channel->recall_id[1] = recall_id[1];
+  init_channel->recall_id[2] = recall_id[2];
 
   init_channel->playback = playback;
   init_channel->sequencer = sequencer;

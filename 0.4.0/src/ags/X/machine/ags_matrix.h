@@ -25,14 +25,6 @@
 
 #include <ags/X/ags_machine.h>
 
-#include <ags/audio/recall/ags_delay_audio.h>
-#include <ags/audio/recall/ags_delay_audio_run.h>
-#include <ags/audio/recall/ags_count_beats_audio.h>
-#include <ags/audio/recall/ags_count_beats_audio_run.h>
-#include <ags/audio/recall/ags_copy_pattern_audio.h>
-#include <ags/audio/recall/ags_copy_pattern_audio_run.h>
-#include <ags/audio/recall/ags_play_notation.h>
-
 #define AGS_TYPE_MATRIX                (ags_matrix_get_type())
 #define AGS_MATRIX(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_MATRIX, AgsMatrix))
 #define AGS_MATRIX_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST((class), AGS_TYPE_MATRIX, AgsMatrixClass))
@@ -49,22 +41,8 @@ struct _AgsMatrix
 
   guint flags;
 
-  /* these recall will be moved to a mapping list in AgsAudio in a future release */
-  AgsDelayAudio *play_delay_audio;
-  AgsDelayAudioRun *play_delay_audio_run;
-  AgsCountBeatsAudio *play_count_beats_audio;
-  AgsCountBeatsAudioRun *play_count_beats_audio_run;
-  AgsCopyPatternAudio *play_copy_pattern_audio;
-  AgsCopyPatternAudioRun *play_copy_pattern_audio_run;
-
-  AgsDelayAudio *recall_delay_audio;
-  AgsDelayAudioRun *recall_delay_audio_run;
-  AgsCountBeatsAudio *recall_count_beats_audio;
-  AgsCountBeatsAudioRun *recall_count_beats_audio_run;
-  AgsCopyPatternAudio *recall_copy_pattern_audio;
-  AgsCopyPatternAudioRun *recall_copy_pattern_audio_run;
-
-  AgsPlayNotation *play_notation;
+  guint mapped_output_pad;
+  guint mapped_input_pad;
 
   GtkTable *table;
 
@@ -90,7 +68,8 @@ struct _AgsMatrixClass
 
 GType ags_matrix_get_type(void);
 
-void ags_matrix_input_map_recall(AgsMatrix *matrix, guint output_pad_start);
+void ags_matrix_input_map_recall(AgsMatrix *matrix, guint input_pad_start);
+void ags_matrix_output_map_recall(AgsMatrix *matrix, guint output_pad_start);
 
 void ags_matrix_draw_gutter(AgsMatrix *matrix);
 void ags_matrix_draw_matrix(AgsMatrix *matrix);

@@ -113,6 +113,8 @@ ags_task_class_init(AgsTaskClass *task)
 void
 ags_task_connectable_interface_init(AgsConnectableInterface *connectable)
 {
+  connectable->is_ready = NULL;
+  connectable->is_connected = NULL;
   connectable->connect = ags_task_connect;
   connectable->disconnect = ags_task_disconnect;
 }
@@ -124,7 +126,7 @@ ags_task_init(AgsTask *task)
 
   task->name = NULL;
 
-  task->start = 0;
+  task->delay = 0;
 
   pthread_cond_init(&(task->wait_sync_task_cond), NULL);
 }

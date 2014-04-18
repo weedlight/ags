@@ -19,6 +19,11 @@
 #include <ags/X/machine/ags_drum_input_pad_callbacks.h>
 #include <ags/X/machine/ags_drum.h>
 
+#include <ags/main.h>
+
+#include <ags/thread/ags_audio_loop.h>
+#include <ags/thread/ags_task_thread.h>
+
 #include <ags/audio/ags_devout.h>
 #include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_input.h>
@@ -32,6 +37,7 @@
 #include <ags/audio/task/ags_append_channel.h>
 #include <ags/audio/task/ags_append_recall.h>
 #include <ags/audio/task/ags_add_audio_signal.h>
+#include <ags/audio/task/ags_open_single_file.h>
 #include <ags/audio/task/ags_cancel_channel.h>
 
 #include <ags/audio/recall/ags_play_audio_signal.h>
@@ -47,25 +53,6 @@ void ags_drum_input_pad_open_response_callback(GtkWidget *widget, gint response,
 
 #define AGS_DRUM_INPUT_PAD_OPEN_AUDIO_FILE_NAME "AgsDrumInputPadOpenAudioFileName\0"
 #define AGS_DRUM_INPUT_PAD_OPEN_SPIN_BUTTON "AgsDrumInputPadOpenSpinButton\0"
-
-void
-ags_drum_input_pad_option_callback(GtkOptionMenu *option, AgsDrumInputPad *drum_input_pad)
-{
-  AgsDrum *drum;
-  GList *list;
-
-  drum = (AgsDrum *) gtk_widget_get_ancestor((GtkWidget *) drum_input_pad, AGS_TYPE_DRUM);
-
-  list = gtk_container_get_children((GtkContainer *) option->menu);
-
-  while(list != NULL && list->data != option->menu_item)
-    list = list->next;
-
-  drum_input_pad->pad.selected_line = (list != NULL) ? AGS_LINE(list->data): NULL;
-
-  if(drum->selected_pad == drum_input_pad)
-    ags_drum_set_pattern(drum);
-}
 
 void
 ags_drum_input_pad_open_callback(GtkWidget *widget, AgsDrumInputPad *drum_input_pad)
@@ -174,8 +161,7 @@ ags_drum_input_pad_open_play_callback(GtkToggleButton *toggle_button, AgsDrumInp
       /* AgsPlayAudioSignal recall */
       play_audio_signal = ags_play_audio_signal_new(AGS_AUDIO_SIGNAL(audio_signal->data),
 						    devout,
-						    i,
-						    NULL);
+						    i);
       AGS_AUDIO_SIGNAL(audio_signal->data)->stream_current = AGS_AUDIO_SIGNAL(audio_signal->data)->stream_beginning;
       drum_input_pad->pad_open_play_ref++;
 
@@ -190,7 +176,7 @@ ags_drum_input_pad_open_play_callback(GtkToggleButton *toggle_button, AgsDrumInp
       devout_play->flags = AGS_DEVOUT_PLAY_PLAYBACK;
       devout_play->source = G_OBJECT(play_audio_signal);
 
-      append_recall = ags_append_recall_new(G_OBJECT(devout->audio_loop),
+      append_recall = ags_append_recall_new(G_OBJECT(AGS_MAIN(devout->ags_main)->main_loop),
 					    devout_play);
     
       tasks = g_list_prepend(tasks, append_recall);
@@ -210,7 +196,7 @@ ags_drum_input_pad_open_play_callback(GtkToggleButton *toggle_button, AgsDrumInp
       devout_play->flags = AGS_DEVOUT_PLAY_PLAYBACK;
       devout_play->source = G_OBJECT(stream_audio_signal);
 
-      append_recall = ags_append_recall_new(G_OBJECT(devout->audio_loop),
+      append_recall = ags_append_recall_new(G_OBJECT(AGS_MAIN(devout->ags_main)->main_loop),
 					    devout_play);
     
       tasks = g_list_prepend(tasks, append_recall);
@@ -220,14 +206,15 @@ ags_drum_input_pad_open_play_callback(GtkToggleButton *toggle_button, AgsDrumInp
       i++;
     }
 
+    /*  */
+    tasks = g_list_reverse(tasks);
+
     /* create start task */
     start_devout = ags_start_devout_new(devout);
     tasks = g_list_prepend(tasks, start_devout);
 
-    /*  */
-    tasks = g_list_reverse(tasks);
-
-    ags_task_thread_append_tasks(devout->task_thread, tasks);
+    ags_task_thread_append_tasks(AGS_TASK_THREAD(AGS_AUDIO_LOOP(AGS_MAIN(devout->ags_main)->main_loop)->task_thread),
+				 tasks);
   }else{
     if((AGS_DRUM_INPUT_PAD_OPEN_PLAY_DONE & (drum_input_pad->flags)) == 0){
       GList *list;
@@ -267,24 +254,24 @@ ags_drum_input_pad_open_play_done(AgsRecall *recall, AgsDrumInputPad *drum_input
 void
 ags_drum_input_pad_open_response_callback(GtkWidget *widget, gint response, AgsDrumInputPad *drum_input_pad)
 {
-  /*
+  AgsDrum *drum;
+  AgsAudioFile *audio_file;
   GtkFileChooserDialog *file_chooser;
   GtkSpinButton *spin_button;
-  AgsDevout *devout;
-  AgsChannel *channel;
-  AgsInput *input;
-  AgsAudioFile *audio_file;
-  AgsAudioSignal *audio_signal_source_old;
+  AgsOpenSingleFile *open_single_file;
   char *name0, *name1;
-  GStaticMutex mutex = G_STATIC_MUTEX_INIT;
+
+  drum = (AgsDrum *) gtk_widget_get_ancestor(GTK_WIDGET(drum_input_pad), AGS_TYPE_DRUM);
 
   file_chooser = drum_input_pad->file_chooser;
 
   if(response == GTK_RESPONSE_ACCEPT){
     name0 = gtk_file_chooser_get_filename((GtkFileChooser *) file_chooser);
     name1 = (char *) g_object_get_data((GObject *) file_chooser, AGS_DRUM_INPUT_PAD_OPEN_AUDIO_FILE_NAME);
+
     spin_button = (GtkSpinButton *) g_object_get_data((GObject *) file_chooser, AGS_DRUM_INPUT_PAD_OPEN_SPIN_BUTTON);
 
+    /* open audio file and read audio signal */
     if(!g_strcmp0(name0, name1)){
       audio_file = (AgsAudioFile *) g_object_get_data((GObject *) file_chooser, g_type_name(AGS_TYPE_AUDIO_FILE));
     }else{
@@ -292,79 +279,40 @@ ags_drum_input_pad_open_response_callback(GtkWidget *widget, gint response, AgsD
 	audio_file = (AgsAudioFile *) g_object_get_data((GObject *) file_chooser, g_type_name(AGS_TYPE_AUDIO_FILE));
 	g_object_unref(G_OBJECT(audio_file));
       }
-
-      audio_file = ags_audio_file_new();
-      audio_file->name = name0;
-      devout = AGS_DEVOUT(AGS_AUDIO(drum_input_pad->pad.channel->audio)->devout);
-      ags_audio_file_set_devout(audio_file, devout);
-      ags_audio_file_open(audio_file);
-      AGS_AUDIO_FILE_GET_CLASS(audio_file)->read_buffer(audio_file);
-      // ags_audio_file_read_audio_signal will be called later
     }
 
-    channel = AGS_CHANNEL(drum_input_pad->pad.channel);
-
-    if(drum_input_pad->pad.group->active){
-      GList *list;
-      guint i;
-
-      audio_file->flags |= AGS_AUDIO_FILE_ALL_CHANNELS;
-      ags_audio_file_read_audio_signal(audio_file);
-
-      list = audio_file->audio_signal;
-
-      for(i = 0; i < AGS_AUDIO(drum_input_pad->pad.channel->audio)->audio_channels && i < audio_file->channels; i++){
-	if(channel->link != NULL)
-	  ags_channel_set_link(channel, NULL);
-
-	AGS_AUDIO_SIGNAL(list->data)->flags |= AGS_AUDIO_SIGNAL_TEMPLATE;
-	AGS_AUDIO_SIGNAL(list->data)->recycling = (GObject *) channel->first_recycling;
-
-	audio_signal_source_old = ags_audio_signal_get_template(channel->first_recycling->audio_signal);
-
-	g_static_mutex_lock(&mutex);
-	channel->first_recycling->audio_signal = g_list_remove(channel->first_recycling->audio_signal, (gpointer) audio_signal_source_old);
-	channel->first_recycling->audio_signal = g_list_prepend(channel->first_recycling->audio_signal, list->data);
-	g_static_mutex_unlock(&mutex);
-
-	g_object_unref(G_OBJECT(audio_signal_source_old));
-
-	channel = channel->next;
-	list = list->next;
-      }
+    /* task */
+    if(AGS_PAD(drum_input_pad)->group->active){
+      open_single_file = ags_open_single_file_new(AGS_PAD(drum_input_pad)->channel,
+						  AGS_DEVOUT(AGS_AUDIO(AGS_MACHINE(drum)->audio)->devout),
+						  name0,
+						  0, AGS_AUDIO(AGS_MACHINE(drum)->audio)->audio_channels);
     }else{
-      channel = ags_channel_nth(channel, (guint) gtk_option_menu_get_history(drum_input_pad->pad.option));
-      audio_file->channel = (guint) spin_button->adjustment->value;
-      ags_audio_file_read_audio_signal(audio_file);
+      AgsLine *line;
+      
+      line = AGS_LINE(ags_line_find_next_grouped(gtk_container_get_children(GTK_CONTAINER(AGS_PAD(drum_input_pad)->expander_set)))->data);
 
-      if(channel->link != NULL)
-	ags_channel_set_link(channel, NULL);
-
-      AGS_AUDIO_SIGNAL(audio_file->audio_signal->data)->flags |= AGS_AUDIO_SIGNAL_TEMPLATE;
-      AGS_AUDIO_SIGNAL(audio_file->audio_signal->data)->recycling = (GObject *) channel->first_recycling;
-      audio_signal_source_old = ags_audio_signal_get_template(channel->first_recycling->audio_signal);
-
-      g_static_mutex_lock(&mutex);
-      channel->first_recycling->audio_signal = g_list_remove(channel->first_recycling->audio_signal, (gpointer) audio_signal_source_old);
-      channel->first_recycling->audio_signal = g_list_prepend(channel->first_recycling->audio_signal, audio_file->audio_signal->data);
-      g_static_mutex_unlock(&mutex);
-
-      g_object_unref(G_OBJECT(audio_signal_source_old));
+      open_single_file = ags_open_single_file_new(line->channel,
+						  AGS_DEVOUT(AGS_AUDIO(AGS_MACHINE(drum)->audio)->devout),
+						  name0,
+						  (guint) spin_button->adjustment->value, 1);
     }
+
+    ags_task_thread_append_task(AGS_TASK_THREAD(AGS_AUDIO_LOOP(AGS_MAIN(AGS_DEVOUT(AGS_AUDIO(AGS_MACHINE(drum)->audio)->devout)->ags_main)->main_loop)->task_thread),
+									AGS_TASK(open_single_file));
 
     gtk_widget_destroy((GtkWidget *) file_chooser);
-    g_object_unref(G_OBJECT(audio_file));
   }else if(response == GTK_RESPONSE_CANCEL){
     audio_file = (AgsAudioFile *) g_object_get_data((GObject *) file_chooser, g_type_name(AGS_TYPE_AUDIO_FILE));
 
-    if(audio_file != NULL)
+    if(audio_file != NULL){
       g_object_unref(G_OBJECT(audio_file));
+    }
 
     gtk_widget_destroy((GtkWidget *) file_chooser);
   }
 
   drum_input_pad->file_chooser = NULL;
-  */
 }
 
 void
@@ -382,9 +330,9 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
 
   devout = AGS_DEVOUT(AGS_MACHINE(drum)->audio->devout);
 
-  audio_loop = devout->audio_loop;
-  task_thread = devout->task_thread;
-  devout_thread = devout->devout_thread;
+  audio_loop = AGS_AUDIO_LOOP(AGS_MAIN(devout->ags_main)->main_loop);
+  task_thread = AGS_TASK_THREAD(audio_loop->task_thread);
+  devout_thread = AGS_DEVOUT_THREAD(audio_loop->devout_thread);
 
   tasks = NULL;
 
@@ -394,15 +342,15 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
     AgsAppendChannel *append_channel;
     AgsAddAudioSignal *add_audio_signal;
     AgsRecycling *recycling;
-    AgsRecallID *recall_id;
-    AgsGroupId group_id, child_group_id;
+    AgsRecallID *recall_id[3];
     gboolean play_all;
     guint flags;
 
-    group_id = ags_recall_id_generate_group_id();
-    child_group_id = ags_recall_id_generate_group_id();
+    recall_id[0] = NULL;
+    recall_id[1] = NULL;
+    recall_id[2] = NULL;
 
-    play_all = drum_input_pad->pad.group->active;
+    play_all = AGS_PAD(drum_input_pad)->group->active;
 
     flags = AGS_AUDIO_SIGNAL_STANDALONE;
 
@@ -410,7 +358,7 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
 
     /* init channel for playback */
     init_channel = ags_init_channel_new(channel, play_all,
-					group_id, child_group_id,
+					recall_id,
 					TRUE, FALSE, FALSE);
     tasks = g_list_prepend(tasks, init_channel);
 
@@ -421,7 +369,7 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
 
       while(channel != next_pad){
 	AGS_DEVOUT_PLAY(channel->devout_play)->flags |= AGS_DEVOUT_PLAY_PAD;
-	AGS_DEVOUT_PLAY(channel->devout_play)->group_id = group_id;
+	AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0] = recall_id[0];
 
 	/* append channel for playback */
 	append_channel = ags_append_channel_new(G_OBJECT(audio_loop),
@@ -431,57 +379,57 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
 	/* play an audio signal */
 	recycling = channel->first_recycling;
 
-	recall_id = ags_recall_id_find_group_id(channel->recall_id, group_id);
-
 	while(recycling != channel->last_recycling->next){
 	  add_audio_signal = ags_add_audio_signal_new(recycling,
 						      devout,
-						      recall_id,
+						      recall_id[0],
 						      flags);
 	  tasks = g_list_prepend(tasks, add_audio_signal);
 
 	  recycling = recycling->next;
 	}
 
+	drum_input_pad->pad_play_ref++;
 	channel = channel->next;
       }
 
       tasks = g_list_reverse(tasks);
       ags_task_thread_append_tasks(task_thread, tasks);
     }else{
-      channel = ags_channel_nth(drum_input_pad->pad.channel,
-				gtk_option_menu_get_history(drum_input_pad->pad.option));
+      AgsLine *line;
+
+      line = AGS_LINE(ags_line_find_next_grouped(gtk_container_get_children(GTK_CONTAINER(AGS_PAD(drum_input_pad)->expander_set)))->data);
 
       AGS_DEVOUT_PLAY(channel->devout_play)->flags &= (~AGS_DEVOUT_PLAY_PAD);
-      AGS_DEVOUT_PLAY(channel->devout_play)->group_id = group_id;
+      AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0] = recall_id[0];
 
       /* init channel for playback */
-      init_channel = ags_init_channel_new(channel, TRUE,
-					  group_id, child_group_id,
+      init_channel = ags_init_channel_new(line->channel, TRUE,
+					  recall_id,
 					  TRUE, FALSE, FALSE);
       tasks = g_list_prepend(tasks, init_channel);
       
       /* append channel for playback */
       append_channel = ags_append_channel_new(G_OBJECT(audio_loop),
-					      AGS_DEVOUT_PLAY(channel->devout_play));
+					      AGS_DEVOUT_PLAY(line->channel->devout_play));
       tasks = g_list_prepend(tasks, append_channel);
 
       /* play an audio signal */
-      recycling = channel->first_recycling;
+      recycling = line->channel->first_recycling;
       
-      recall_id = ags_recall_id_find_group_id(channel->recall_id, group_id);
-      
-      while(recycling != channel->last_recycling->next){
+      while(recycling != line->channel->last_recycling->next){
 	add_audio_signal = ags_add_audio_signal_new(recycling,
 						    devout,
-						    recall_id,
+						    recall_id[0],
 						    flags);
 	tasks = g_list_prepend(tasks, add_audio_signal);
 	
 	recycling = recycling->next;
       }
 
-      tasks = g_list_reverse(tasks);      
+      drum_input_pad->pad_play_ref++;
+
+      tasks = g_list_reverse(tasks);
       ags_task_thread_append_tasks(task_thread, tasks);
     }
 
@@ -494,7 +442,7 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
   }else{
     AgsCancelChannel *cancel_channel;
 
-    channel = drum_input_pad->pad.channel;
+    channel = AGS_PAD(drum_input_pad)->channel;
 
     if((AGS_DEVOUT_PLAY_PAD & (AGS_DEVOUT_PLAY(channel->devout_play)->flags)) != 0){
       AgsChannel *next_pad;
@@ -504,7 +452,7 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
       if((AGS_DEVOUT_PLAY_DONE & (AGS_DEVOUT_PLAY(channel->devout_play)->flags)) == 0){
 	/* cancel request */
 	while(channel != next_pad){
-	  cancel_channel = ags_cancel_channel_new(channel, AGS_DEVOUT_PLAY(channel->devout_play)->group_id,
+	  cancel_channel = ags_cancel_channel_new(channel, AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0],
 						  AGS_DEVOUT_PLAY(channel->devout_play));
 
 	  ags_task_thread_append_task(task_thread, (AgsTask *) cancel_channel);
@@ -521,12 +469,15 @@ ags_drum_input_pad_play_callback(GtkToggleButton *toggle_button, AgsDrumInputPad
 	}
       }
     }else{
-      channel = ags_channel_nth(channel,
-				gtk_option_menu_get_history(drum_input_pad->pad.option));
+      AgsLine *line;
+
+      line = AGS_LINE(ags_line_find_next_grouped(gtk_container_get_children(GTK_CONTAINER(AGS_PAD(drum_input_pad)->expander_set)))->data);
+
+      channel = line->channel;
 
       if((AGS_DEVOUT_PLAY_DONE & (AGS_DEVOUT_PLAY(channel->devout_play)->flags)) == 0){
 	/* cancel request */
-	cancel_channel = ags_cancel_channel_new(channel, AGS_DEVOUT_PLAY(channel->devout_play)->group_id,
+	cancel_channel = ags_cancel_channel_new(channel, AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0],
 						AGS_DEVOUT_PLAY(channel->devout_play));
 
 	ags_task_thread_append_task(task_thread, (AgsTask *) cancel_channel);

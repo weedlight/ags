@@ -19,6 +19,9 @@
 #include <ags/audio/recall/ags_copy_audio_signal.h>
 
 #include <ags-lib/object/ags_connectable.h>
+
+#include <ags/main.h>
+
 #include <ags/object/ags_dynamic_connectable.h>
 
 #include <ags/audio/ags_devout.h>
@@ -26,6 +29,8 @@
 #include <ags/audio/ags_recycling.h>
 #include <ags/audio/ags_channel.h>
 #include <ags/audio/ags_recall_id.h>
+#include <ags/audio/ags_recall_channel.h>
+#include <ags/audio/ags_recall_channel_run.h>
 
 #include <ags/audio/recall/ags_copy_channel.h>
 
@@ -138,6 +143,12 @@ ags_copy_audio_signal_dynamic_connectable_interface_init(AgsDynamicConnectableIn
 void
 ags_copy_audio_signal_init(AgsCopyAudioSignal *copy_audio_signal)
 {
+  AGS_RECALL(copy_audio_signal)->name = "ags-copy\0";
+  AGS_RECALL(copy_audio_signal)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(copy_audio_signal)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(copy_audio_signal)->xml_type = "ags-copy-audio-signal\0";
+  AGS_RECALL(copy_audio_signal)->port = NULL;
+
   AGS_RECALL(copy_audio_signal)->child_type = G_TYPE_NONE;
 }
 
@@ -190,10 +201,13 @@ void
 ags_copy_audio_signal_run_inter(AgsRecall *recall)
 {
   AgsDevout *devout;
+  AgsCopyChannel *copy_channel;
   AgsCopyAudioSignal *copy_audio_signal;
   AgsAudioSignal *source, *destination;
   //  AgsAttack *attack;
   GList *stream_source, *stream_destination;
+  gboolean muted;
+  GValue value = {0,};
 
   AGS_RECALL_CLASS(ags_copy_audio_signal_parent_class)->run_inter(recall);
 
@@ -210,6 +224,25 @@ ags_copy_audio_signal_run_inter(AgsRecall *recall)
 
   //FIXME:JK: attack probably needs to be removed
   destination = AGS_RECALL_AUDIO_SIGNAL(copy_audio_signal)->destination;
+
+  if(destination == NULL){
+    g_warning("no destination\0");
+    return;
+  }
+
+  copy_channel = AGS_COPY_CHANNEL(AGS_RECALL_CHANNEL_RUN(recall->parent->parent)->recall_channel);
+
+  g_value_init(&value, G_TYPE_BOOLEAN);
+  ags_port_safe_read(copy_channel->muted,
+		     &value);
+
+  muted = g_value_get_boolean(&value);
+  g_value_unset(&value);
+
+  if(muted){
+    return;
+  }
+
   stream_destination = destination->stream_current;
   //  attack = AGS_RECALL_AUDIO_SIGNAL(copy_audio_signal)->attack;
 

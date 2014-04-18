@@ -19,6 +19,8 @@
 #include <ags/X/machine/ags_ffplayer_callbacks.h>
 #include <ags/X/ags_machine_callbacks.h>
 
+#include <ags/object/ags_playable.h>
+
 #include <ags/audio/ags_channel.h>
 
 #include <ags/audio/task/ags_link_channel.h>
@@ -50,18 +52,11 @@ ags_ffplayer_parent_set_callback(GtkWidget *widget, GtkObject *old_parent, AgsFF
   window = (AgsWindow *) gtk_widget_get_toplevel(widget);
   audio = ffplayer->machine.audio;
   audio->devout = (GObject *) window->devout;
-
-  ffplayer->machine.name = g_strdup_printf("Default %d\0", window->counter->ffplayer);
-  window->counter->ffplayer++;
-
-  /* AgsPlayNotation */
-  g_object_set(G_OBJECT(ffplayer->play_notation),
-	       "devout\0", audio->devout,
-	       NULL);
-
-  g_object_set(G_OBJECT(ffplayer->recall_notation),
-	       "devout\0", audio->devout,
-	       NULL);
+  
+  AGS_MACHINE(ffplayer)->name = g_strdup_printf("Default %d\0",
+						ags_window_find_machine_counter(window, AGS_TYPE_FFPLAYER)->counter);
+  ags_window_increment_machine_counter(window,
+				       AGS_TYPE_FFPLAYER);
 }
 
 void

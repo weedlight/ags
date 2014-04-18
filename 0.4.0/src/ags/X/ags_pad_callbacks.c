@@ -18,8 +18,17 @@
 
 #include <ags/X/ags_pad_callbacks.h>
 
+#include <ags/main.h>
+
+#include <ags/thread/ags_audio_loop.h>
+#include <ags/thread/ags_task_thread.h>
+
+#include <ags/audio/ags_devout.h>
+#include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_channel.h>
 #include <ags/audio/ags_output.h>
+
+#include <ags/audio/task/recall/ags_set_muted.h>
 
 #include <ags/X/ags_machine.h>
 
@@ -28,8 +37,6 @@ ags_pad_parent_set_callback(GtkWidget *widget, GtkObject *old_parent, AgsPad *pa
 {
   if(old_parent != NULL)
     return;
-
-  pad->selected_line = (AgsLine *) pad->option->menu_item;
 }
 
 int
@@ -54,6 +61,42 @@ ags_pad_option_changed_callback(GtkWidget *widget, AgsPad *pad)
 int
 ags_pad_group_clicked_callback(GtkWidget *widget, AgsPad *pad)
 {
+  AgsLine *line;
+  GtkContainer *container;
+  GList *list;
+
+  if(gtk_toggle_button_get_active(pad->group)){
+    container = (GtkContainer *) pad->expander_set;
+
+    list = gtk_container_get_children(container);
+    
+    while(list != NULL){
+      line = AGS_LINE(list->data);
+
+      if(!gtk_toggle_button_get_active(line->group)){
+	gtk_toggle_button_set_active(line->group, TRUE);
+      }
+
+      list = list->next;
+    }
+  }else{
+    container = (GtkContainer *) pad->expander_set;
+
+    list = gtk_container_get_children(container);
+    
+    while(list != NULL){
+      line = AGS_LINE(list->data);
+
+      if(!gtk_toggle_button_get_active(line->group)){
+	return(0);
+      }
+
+      list = list->next;
+    }
+
+    gtk_toggle_button_set_active(pad->group, TRUE);
+  }
+
   return(0);
 }
 
@@ -62,15 +105,32 @@ ags_pad_mute_clicked_callback(GtkWidget *widget, AgsPad *pad)
 {
   AgsMachine *machine;
   GtkContainer *container;
-  GList *list;
+  AgsTaskThread *task_thread;
+  AgsChannel *current;
+  AgsSetMuted *set_muted;
+  GList *list, *tasks;
+
+  task_thread = AGS_TASK_THREAD(AGS_AUDIO_LOOP(AGS_MAIN(AGS_DEVOUT(AGS_AUDIO(pad->channel->audio)->devout)->ags_main)->main_loop)->task_thread);
+
+  current = pad->channel;
+  tasks = NULL;
 
   if(gtk_toggle_button_get_active(pad->mute)){
     if(gtk_toggle_button_get_active(pad->solo))
       gtk_toggle_button_set_active(pad->solo, FALSE);
+
+    /* mute */
+    while(current != pad->channel->next_pad){
+      set_muted = ags_set_muted_new(G_OBJECT(current),
+				    TRUE);
+      tasks = g_list_prepend(tasks, set_muted);
+
+      current = current->next;
+    }
   }else{
     machine = (AgsMachine *) gtk_widget_get_ancestor((GtkWidget *) pad, AGS_TYPE_MACHINE);
 
-    if((machine->flags & AGS_MACHINE_SOLO) != 0){
+    if((AGS_MACHINE_SOLO & (machine->flags)) != 0){
       container = (GtkContainer *) (AGS_IS_OUTPUT(pad->channel) ? machine->output: machine->input);
       list = gtk_container_get_children(container);
 
@@ -81,7 +141,19 @@ ags_pad_mute_clicked_callback(GtkWidget *widget, AgsPad *pad)
 
       machine->flags &= ~(AGS_MACHINE_SOLO);
     }
+
+    /* unmute */
+    while(current != pad->channel->next_pad){
+      set_muted = ags_set_muted_new(G_OBJECT(current),
+				    FALSE);
+      tasks = g_list_prepend(tasks, set_muted);
+
+      current = current->next;
+    }
   }
+
+  ags_task_thread_append_tasks(task_thread,
+			       tasks);
 
   return(0);
 }

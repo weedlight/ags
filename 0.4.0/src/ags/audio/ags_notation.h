@@ -22,6 +22,7 @@
 #include <glib-object.h>
 #include <libxml/tree.h>
 
+#include <ags/audio/ags_timestamp.h>
 #include <ags/audio/ags_note.h>
 
 #define AGS_TYPE_NOTATION                (ags_notation_get_type())
@@ -31,15 +32,22 @@
 #define AGS_IS_NOTATION_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_NOTATION))
 #define AGS_NOTATION_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_NOTATION, AgsNotationClass))
 
-#define AGS_NOTATION_MINIMUM_NOTE_LENGTH (1.0 / 16.0)
-#define AGS_NOTATION_MAXIMUM_NOTE_LENGTH 256
+#define AGS_NOTATION_DEFAULT_BPM (120.0)
+
+#define AGS_NOTATION_TICS_PER_BEAT (16.0)
+#define AGS_NOTATION_MINIMUM_NOTE_LENGTH (exp2(-4.0)) // same as (1.0 / 16.0)
+#define AGS_NOTATION_MAXIMUM_NOTE_LENGTH (256.0)
+
+#define AGS_NOTATION_DEFAULT_LENGTH (65535.0 / AGS_NOTATION_TICS_PER_BEAT - AGS_NOTATION_MAXIMUM_NOTE_LENGTH)
+#define AGS_NOTATION_DEFAULT_JIFFIE (60.0 / AGS_NOTATION_DEFAULT_BPM * AGS_NOTATION_TICS_PER_BEAT)
+#define AGS_NOTATION_DEFAULT_DURATION (AGS_NOTATION_DEFAULT_LENGTH * AGS_NOTATION_DEFAULT_JIFFIE * AGS_MICROSECONDS_PER_SECOND)
 
 typedef struct _AgsNotation AgsNotation;
 typedef struct _AgsNotationClass AgsNotationClass;
 
 typedef enum{
-  AGS_NOTATION_RASTER            =  1,
-  AGS_NOTATION_DEFAULT_LENGTH    =  1 <<  1,
+  AGS_NOTATION_STICKY              =  1,
+  AGS_NOTATION_INDICATED_LENGTH    =  1 <<  1,
 }AgsNotationFlags;
 
 struct _AgsNotation
@@ -48,22 +56,31 @@ struct _AgsNotation
 
   guint flags;
 
+  GObject *timestamp;
+
   guint audio_channel;
   GObject *audio;
 
-  guint base_frequency;
+  gchar *key;
+  gdouble base_frequency;
 
-  char *tact;
-  guint bpm;
+  gdouble tact;
+  gdouble bpm;
 
-  guint maximum_note_length;
+  gdouble maximum_note_length;
 
   GList *notes;
-  GList *start_loop;
-  GList *end_loop;
-  guint offset;
+  
+  gdouble start_loop;
+  gdouble end_loop;
+  gdouble offset;
 
   GList *selection;
+
+  GObject *port;
+
+  GList *current_notes;
+  GList *next_notes;
 };
 
 struct _AgsNotationClass
@@ -72,6 +89,9 @@ struct _AgsNotationClass
 };
 
 GType ags_notation_get_type();
+
+GList* ags_notation_find_near_timestamp(GList *notation, guint audio_channel,
+					GObject *timestamp);
 
 void ags_notation_add_note(AgsNotation *notation,
 			   AgsNote *note,
@@ -115,6 +135,8 @@ void ags_notation_insert_from_clipboard(AgsNotation *notation,
 					xmlNodePtr content,
 					gboolean reset_x_offset, guint x_offset,
 					gboolean reset_y_offset, guint y_offset);
+
+GList* ags_notation_get_current(AgsNotation *notation);
 
 AgsNotation* ags_notation_new(guint audio_channel);
 

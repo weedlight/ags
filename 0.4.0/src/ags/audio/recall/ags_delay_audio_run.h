@@ -38,13 +38,11 @@ struct _AgsDelayAudioRun
 {
   AgsRecallAudioRun recall_audio_run;
 
-  AgsAttack *attack;
-
   guint dependency_ref;
 
   guint hide_ref;
   guint hide_ref_counter;
-
+  
   guint notation_counter;
   guint sequencer_counter;
 };
@@ -53,36 +51,36 @@ struct _AgsDelayAudioRunClass
 {
   AgsRecallAudioRunClass recall_audio_run;
 
-  void (*notation_alloc_output)(AgsDelayAudioRun *delay, guint nth_run,
-				guint attack);
-  void (*notation_alloc_input)(AgsDelayAudioRun *delay, guint nth_run,
-			       guint attack);
-  void (*notation_count)(AgsDelayAudioRun *delay, guint nth_run,
-			 guint attack);
+  void (*notation_alloc_output)(AgsDelayAudioRun *delay_audio_run, guint run_order,
+				guint delay, guint attack);
+  void (*notation_alloc_input)(AgsDelayAudioRun *delay_audio_run, guint run_order,
+			       guint delay, guint attack);
+  void (*notation_count)(AgsDelayAudioRun *delay_audio_run, guint run_order,
+			 guint delay, guint attack);
 
-  void (*sequencer_alloc_output)(AgsDelayAudioRun *delay, guint nth_run,
-				 guint attack);
-  void (*sequencer_alloc_input)(AgsDelayAudioRun *delay, guint nth_run,
-				guint attack);
-  void (*sequencer_count)(AgsDelayAudioRun *delay, guint nth_run,
-			  guint attack);
+  void (*sequencer_alloc_output)(AgsDelayAudioRun *delay_audio_run, guint run_order,
+				 guint delay, guint attack);
+  void (*sequencer_alloc_input)(AgsDelayAudioRun *delay_audio_run, guint run_order,
+				guint delay, guint attack);
+  void (*sequencer_count)(AgsDelayAudioRun *delay_audio_run, guint run_order,
+			  guint delay, guint attack);
 };
 
 GType ags_delay_audio_run_get_type();
 
-void ags_delay_audio_run_notation_alloc_output(AgsDelayAudioRun *delay, guint nth_run,
-					       guint attack);
-void ags_delay_audio_run_notation_alloc_input(AgsDelayAudioRun *delay, guint nth_run,
-					      guint attack);
-void ags_delay_audio_run_notation_count(AgsDelayAudioRun *delay, guint nth_run,
-					guint attack);
+void ags_delay_audio_run_notation_alloc_output(AgsDelayAudioRun *delay_audio_run, guint run_order,
+					       guint delay, guint attack);
+void ags_delay_audio_run_notation_alloc_input(AgsDelayAudioRun *delay_audio_run, guint run_order,
+					      guint delay, guint attack);
+void ags_delay_audio_run_notation_count(AgsDelayAudioRun *delay_audio_run, guint run_order,
+					guint delay, guint attack);
 
-void ags_delay_audio_run_sequencer_alloc_output(AgsDelayAudioRun *delay, guint nth_run,
-						guint attack);
-void ags_delay_audio_run_sequencer_alloc_input(AgsDelayAudioRun *delay, guint nth_run,
-					       guint attack);
-void ags_delay_audio_run_sequencer_count(AgsDelayAudioRun *delay, guint nth_run,
-					 guint attack);
+void ags_delay_audio_run_sequencer_alloc_output(AgsDelayAudioRun *delay_audio_run, guint run_order,
+						guint delay, guint attack);
+void ags_delay_audio_run_sequencer_alloc_input(AgsDelayAudioRun *delay_audio_run, guint run_order,
+					       guint delay, guint attack);
+void ags_delay_audio_run_sequencer_count(AgsDelayAudioRun *delay_audio_run, guint run_order,
+					 guint delay, guint attack);
 
 AgsDelayAudioRun* ags_delay_audio_run_new();
 

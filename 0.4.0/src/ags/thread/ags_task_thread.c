@@ -20,6 +20,11 @@
 
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/main.h>
+
+#include <ags/thread/ags_audio_loop.h>
+#include <ags/thread/ags_returnable_thread.h>
+
 #include <ags/audio/ags_devout.h>
 
 #include <math.h>
@@ -34,8 +39,8 @@ void ags_task_thread_finalize(GObject *gobject);
 void ags_task_thread_start(AgsThread *thread);
 void ags_task_thread_run(AgsThread *thread);
 
-void* ags_task_thread_append_task_thread(void *ptr);
-void* ags_task_thread_append_tasks_thread(void *ptr);
+void ags_task_thread_append_task_queue(AgsReturnableThread *returnable_thread, gpointer data);
+void ags_task_thread_append_tasks_queue(AgsReturnableThread *returnable_thread, gpointer data);
 
 static gpointer ags_task_thread_parent_class = NULL;
 static AgsConnectableInterface *ags_task_thread_parent_connectable_interface;
@@ -121,22 +126,25 @@ ags_task_thread_init(AgsTaskThread *task_thread)
   pthread_mutex_init(&(task_thread->read_mutex), NULL);
   pthread_mutex_init(&(task_thread->launch_mutex), NULL);
 
-  g_cond_init(&task_thread->cond);
-  g_mutex_init(&task_thread->mutex);
-
   task_thread->queued = 0;
   task_thread->pending = 0;
 
   task_thread->exec = NULL;
   task_thread->queue = NULL;
+
+  task_thread->thread_pool = NULL;
 }
 
 void
 ags_task_thread_connect(AgsConnectable *connectable)
 {
+  AgsTaskThread *task_thread;
+
   ags_task_thread_parent_connectable_interface->connect(connectable);
 
-  /* empty */
+  task_thread = AGS_TASK_THREAD(connectable);
+  task_thread->thread_pool = AGS_MAIN(AGS_AUDIO_LOOP(AGS_THREAD(task_thread)->parent)->main)->thread_pool;
+  task_thread->thread_pool->parent = task_thread;
 }
 
 void
@@ -165,6 +173,16 @@ ags_task_thread_finalize(GObject *gobject)
 void
 ags_task_thread_start(AgsThread *thread)
 {
+  AgsTaskThread *task_thread;
+
+  task_thread = AGS_TASK_THREAD(thread);
+
+  ags_thread_pool_start(task_thread->thread_pool);
+
+  while((AGS_THREAD_POOL_READY & (g_atomic_int_get(&(task_thread->thread_pool->flags)))) == 0){
+    usleep(500000);
+  }
+
   if((AGS_THREAD_SINGLE_LOOP & (thread->flags)) == 0){
     AGS_THREAD_CLASS(ags_task_thread_parent_class)->start(thread);
   }
@@ -227,7 +245,7 @@ ags_task_thread_run(AgsThread *thread)
     for(i = 0; i < task_thread->pending; i++){
       task = AGS_TASK(list->data);
 
-      //      g_message("ags_devout_task_thread - launching task: %s\n\0", G_OBJECT_TYPE_NAME(task));
+      g_message("ags_devout_task_thread - launching task: %s\n\0", G_OBJECT_TYPE_NAME(task));
 
       ags_task_launch(task);
 
@@ -239,8 +257,8 @@ ags_task_thread_run(AgsThread *thread)
   }
 }
 
-void*
-ags_task_thread_append_task_thread(void *ptr)
+void
+ags_task_thread_append_task_queue(AgsReturnableThread *returnable_thread, gpointer data)
 {
   AgsTask *task;
   AgsTaskThread *task_thread;
@@ -248,7 +266,8 @@ ags_task_thread_append_task_thread(void *ptr)
   gboolean initial_wait;
   int ret;
 
-  append = (AgsTaskThreadAppend *) ptr;
+  g_message("task b\0");
+  append = (AgsTaskThreadAppend *) g_atomic_pointer_get(&(returnable_thread->safe_data));
 
   task_thread = append->task_thread;
   task = AGS_TASK(append->data);
@@ -268,9 +287,6 @@ ags_task_thread_append_task_thread(void *ptr)
 
   /*  */
   //  g_message("ags_task_thread_append_task_thread ------------------------- %d\0", devout->append_task_suspend);
-
-  /*  */
-  pthread_exit(NULL);
 }
 
 /**
@@ -284,19 +300,34 @@ void
 ags_task_thread_append_task(AgsTaskThread *task_thread, AgsTask *task)
 {
   AgsTaskThreadAppend *append;
-  pthread_t thread;
+  AgsThread *thread;
+
+  g_message("task\0");
 
   append = (AgsTaskThreadAppend *) malloc(sizeof(AgsTaskThreadAppend));
 
   append->task_thread = task_thread;
   append->data = task;
 
-  pthread_create(&thread, NULL,
-		 &ags_task_thread_append_task_thread, append);
+  thread = ags_thread_pool_pull(task_thread->thread_pool);
+  
+  pthread_mutex_lock(&(AGS_RETURNABLE_THREAD(thread)->reset_mutex));
+
+  g_atomic_pointer_set(&(AGS_RETURNABLE_THREAD(thread)->safe_data),
+		       append);
+
+  ags_returnable_thread_connect_safe_run(AGS_RETURNABLE_THREAD(thread),
+					 ags_task_thread_append_task_queue);
+  g_atomic_int_or(&(AGS_RETURNABLE_THREAD(thread)->flags),
+		  AGS_RETURNABLE_THREAD_IN_USE);
+    
+  pthread_mutex_unlock(&(AGS_RETURNABLE_THREAD(thread)->reset_mutex));
+
+  //  pthread_kill((thread->thread), AGS_THREAD_RESUME_SIG);
 }
 
-void*
-ags_task_thread_append_tasks_thread(void *ptr)
+void
+ags_task_thread_append_tasks_queue(AgsReturnableThread *returnable_thread, gpointer data)
 {
   AgsTask *task;
   AgsTaskThread *task_thread;
@@ -305,7 +336,8 @@ ags_task_thread_append_tasks_thread(void *ptr)
   gboolean initial_wait;
   int ret;
 
-  append = (AgsTaskThreadAppend *) ptr;
+  g_message("task a\0");
+  append = (AgsTaskThreadAppend *) g_atomic_pointer_get(&(returnable_thread->safe_data));
 
   task_thread = append->task_thread;
   list = (GList *) append->data;
@@ -322,9 +354,6 @@ ags_task_thread_append_tasks_thread(void *ptr)
 
   /*  */
   pthread_mutex_unlock(&(task_thread->read_mutex));
-
-  /*  */
-  pthread_exit(NULL);
 }
 
 /**
@@ -339,15 +368,31 @@ void
 ags_task_thread_append_tasks(AgsTaskThread *task_thread, GList *list)
 {
   AgsTaskThreadAppend *append;
-  pthread_t thread;
+  AgsThread *thread;
+
+  g_message("tasks\0");
 
   append = (AgsTaskThreadAppend *) malloc(sizeof(AgsTaskThreadAppend));
 
   append->task_thread = task_thread;
   append->data = list;
 
-  pthread_create(&thread, NULL,
-		 &ags_task_thread_append_tasks_thread, append);
+  thread = ags_thread_pool_pull(task_thread->thread_pool);
+
+  pthread_mutex_lock(&(AGS_RETURNABLE_THREAD(thread)->reset_mutex));
+
+
+  g_atomic_pointer_set(&(AGS_RETURNABLE_THREAD(thread)->safe_data),
+		       append);
+
+  ags_returnable_thread_connect_safe_run(AGS_RETURNABLE_THREAD(thread),
+					 ags_task_thread_append_tasks_queue);
+  g_atomic_int_or(&(AGS_RETURNABLE_THREAD(thread)->flags),
+		  AGS_RETURNABLE_THREAD_IN_USE);
+
+  pthread_mutex_unlock(&(AGS_RETURNABLE_THREAD(thread)->reset_mutex));
+
+  //  pthread_kill((thread->thread), AGS_THREAD_RESUME_SIG);
 }
 
 AgsTaskThread*

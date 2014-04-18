@@ -47,6 +47,54 @@ ags_connectable_base_init(AgsConnectableInterface *interface)
 }
 
 void
+ags_connectable_add_to_registry(AgsConnectable *connectable)
+{
+  AgsConnectableInterface *connectable_interface;
+
+  g_return_if_fail(AGS_IS_CONNECTABLE(connectable));
+  connectable_interface = AGS_CONNECTABLE_GET_INTERFACE(connectable);
+  g_return_if_fail(connectable_interface->add_to_registry);
+  connectable_interface->add_to_registry(connectable);
+}
+
+void
+ags_connectable_remove_from_registry(AgsConnectable *connectable)
+{
+  AgsConnectableInterface *connectable_interface;
+
+  g_return_if_fail(AGS_IS_CONNECTABLE(connectable));
+  connectable_interface = AGS_CONNECTABLE_GET_INTERFACE(connectable);
+  g_return_if_fail(connectable_interface->remove_from_registry);
+  connectable_interface->remove_from_registry(connectable);
+}
+
+gboolean
+ags_connectable_is_ready(AgsConnectable *connectable)
+{
+  AgsConnectableInterface *connectable_interface;
+
+  g_return_val_if_fail(AGS_IS_CONNECTABLE(connectable), FALSE);
+  connectable_interface = AGS_CONNECTABLE_GET_INTERFACE(connectable);
+
+  if(connectable_interface->is_ready == NULL)
+    return(TRUE);
+
+  return(connectable_interface->is_ready(connectable));
+}
+
+gboolean
+ags_connectable_is_connected(AgsConnectable *connectable)
+{
+  AgsConnectableInterface *connectable_interface;
+
+  g_return_val_if_fail(AGS_IS_CONNECTABLE(connectable), FALSE);
+  connectable_interface = AGS_CONNECTABLE_GET_INTERFACE(connectable);
+  g_return_val_if_fail(connectable_interface->is_connected, FALSE);
+
+  return(connectable_interface->is_connected(connectable));
+}
+
+void
 ags_connectable_connect(AgsConnectable *connectable)
 {
   AgsConnectableInterface *connectable_interface;
@@ -54,6 +102,11 @@ ags_connectable_connect(AgsConnectable *connectable)
   g_return_if_fail(AGS_IS_CONNECTABLE(connectable));
   connectable_interface = AGS_CONNECTABLE_GET_INTERFACE(connectable);
   g_return_if_fail(connectable_interface->connect);
+
+  if(!ags_connectable_is_ready(connectable)){
+    return;
+  }
+
   connectable_interface->connect(connectable);
 }
 

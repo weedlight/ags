@@ -25,6 +25,8 @@
 
 #include <ags/audio/ags_channel.h>
 
+#include <ags/widget/ags_expander.h>
+
 #define AGS_TYPE_LINE                (ags_line_get_type())
 #define AGS_LINE(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_LINE, AgsLine))
 #define AGS_LINE_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST((class), AGS_TYPE_LINE, AgsLineClass))
@@ -32,44 +34,56 @@
 #define AGS_IS_LINE_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_LINE))
 #define AGS_LINE_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS ((obj), AGS_TYPE_LINE, AgsLineClass))
 
+#define AGS_LINE_DEFAULT_VERSION "0.4.0-beta\0"
+#define AGS_LINE_DEFAULT_BUILD_ID "0.4.0-beta\0"
+
 typedef struct _AgsLine AgsLine;
 typedef struct _AgsLineClass AgsLineClass;
-typedef struct _AgsLineMember AgsLineMember;
 
 typedef enum{
-  AGS_LINE_CONNECTED       = 1,
+  AGS_LINE_CONNECTED         = 1,
+  AGS_LINE_GROUPED           = 1 << 1,
+  AGS_LINE_MAPPED_RECALL     = 1 << 2,
+  AGS_LINE_PREMAPPED_RECALL  = 1 << 3,
 }AgsLineFlags;
 
 struct _AgsLine
 {
-  GtkMenuItem item;
+  GtkVBox vbox;
 
   guint flags;
 
-  GtkWidget *pad;
+  gchar *version;
+  gchar *build_id;
 
-  GtkTable *table;
-  GtkLabel *label;
+  gchar *name;
 
   AgsChannel *channel;
+
+  GtkWidget *pad;
+
+  GtkLabel *label;
+  GtkToggleButton *group;
+
+  AgsExpander *expander;
 };
 
 struct _AgsLineClass
 {
-  GtkMenuItemClass item;
+  GtkVBoxClass vbox;
 
   void (*set_channel)(AgsLine *line, AgsChannel *channel);
-};
 
-struct _AgsLineMember
-{
-  AgsRecall *recall;
-  guint control;
+  void (*group_changed)(AgsLine *line);
 };
 
 GType ags_line_get_type(void);
 
 void ags_line_set_channel(AgsLine *line, AgsChannel *channel);
+
+void ags_line_group_changed(AgsLine *line);
+
+GList* ags_line_find_next_grouped(GList *line);
 
 AgsLine* ags_line_new(GtkWidget *pad, AgsChannel *channel);
 

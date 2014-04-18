@@ -19,7 +19,13 @@
 #include <ags/audio/ags_notation.h>
 
 #include <ags-lib/object/ags_connectable.h>
+
 #include <ags/object/ags_tactable.h>
+#include <ags/object/ags_portlet.h>
+
+#include <ags/audio/ags_devout.h>
+#include <ags/audio/ags_port.h>
+#include <ags/audio/ags_timestamp.h>
 
 #include <stdlib.h>
 #include <errno.h>
@@ -27,12 +33,27 @@
 void ags_notation_class_init(AgsNotationClass *notation);
 void ags_notation_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_notation_tactable_interface_init(AgsTactableInterface *tactable);
+void ags_notation_portlet_interface_init(AgsPortletInterface *portlet);
 void ags_notation_init(AgsNotation *notation);
+void ags_notation_set_property(GObject *gobject,
+			       guint prop_id,
+			       const GValue *value,
+			       GParamSpec *param_spec);
+void ags_notation_get_property(GObject *gobject,
+			       guint prop_id,
+			       GValue *value,
+			       GParamSpec *param_spec);
 void ags_notation_connect(AgsConnectable *connectable);
 void ags_notation_disconnect(AgsConnectable *connectable);
 void ags_notation_finalize(GObject *object);
 
 void ags_notation_change_bpm(AgsTactable *tactable, gdouble bpm);
+
+void ags_notation_set_port(AgsPortlet *portlet, AgsPort *port);
+AgsPort* ags_notation_get_port(AgsPortlet *portlet);
+GList* ags_notation_list_safe_properties(AgsPortlet *portlet);
+void ags_notation_safe_set_property(AgsPortlet *portlet, gchar *property_name, GValue *value);
+void ags_notation_safe_get_property(AgsPortlet *portlet, gchar *property_name, GValue *value);
 
 void ags_notation_insert_native_piano_from_clipboard(AgsNotation *notation,
 						     xmlNodePtr root_node, char *version,
@@ -41,11 +62,18 @@ void ags_notation_insert_native_piano_from_clipboard(AgsNotation *notation,
 						     gboolean from_x_offset, guint x_offset,
 						     gboolean from_y_offset, guint y_offset);
 
-static gpointer ags_notation_parent_class = NULL;
+#define AGS_NOTATION_CLIPBOARD_VERSION "0.3.12\0"
+#define AGS_NOTATION_CLIPBOARD_TYPE "AgsNotationClipboardXml\0"
+#define AGS_NOTATION_CLIPBOARD_FORMAT "AgsNotationNativePiano\0"
 
-#define AGS_NOTATION_CLIPBOARD_VERSION "0.3.12"
-#define AGS_NOTATION_CLIPBOARD_TYPE "AgsNotationClipboardXml"
-#define AGS_NOTATION_CLIPBOARD_FORMAT "AgsNotationNativePiano"
+enum{
+  PROP_0,
+  PROP_PORT,
+  PROP_CURRENT_NOTES,
+  PROP_NEXT_NOTES,
+};
+
+static gpointer ags_notation_parent_class = NULL;
 
 GType
 ags_notation_get_type()
@@ -77,6 +105,12 @@ ags_notation_get_type()
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_portlet_interface_info = {
+      (GInterfaceInitFunc) ags_notation_portlet_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
     ags_type_notation = g_type_register_static(G_TYPE_OBJECT,
 					       "AgsNotation\0",
 					       &ags_notation_info,
@@ -89,6 +123,10 @@ ags_notation_get_type()
     g_type_add_interface_static(ags_type_notation,
 				AGS_TYPE_TACTABLE,
 				&ags_tactable_interface_info);
+
+    g_type_add_interface_static(ags_type_notation,
+				AGS_TYPE_PORTLET,
+				&ags_portlet_interface_info);
   }
 
   return(ags_type_notation);
@@ -98,17 +136,49 @@ void
 ags_notation_class_init(AgsNotationClass *notation)
 {
   GObjectClass *gobject;
+  GParamSpec *param_spec;
 
   ags_notation_parent_class = g_type_class_peek_parent(notation);
 
   gobject = (GObjectClass *) notation;
 
+  gobject->set_property = ags_notation_set_property;
+  gobject->get_property = ags_notation_get_property;
+
   gobject->finalize = ags_notation_finalize;
+
+  /* properties */
+  param_spec = g_param_spec_object("port\0",
+				   "port of notation\0",
+				   "The port of notation\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_PORT,
+				  param_spec);
+
+  param_spec = g_param_spec_pointer("current-notes\0",
+				    "current notes for offset\0",
+				    "The current notes for offset\0",
+				    G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_CURRENT_NOTES,
+				  param_spec);
+
+  param_spec = g_param_spec_pointer("next-notes\0",
+				    "next notes for offset\0",
+				    "The next notes for offset\0",
+				    G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_NEXT_NOTES,
+				  param_spec);
 }
 
 void
 ags_notation_connectable_interface_init(AgsConnectableInterface *connectable)
 {
+  connectable->is_ready = NULL;
+  connectable->is_connected = NULL;
   connectable->connect = ags_notation_connect;
   connectable->disconnect = ags_notation_disconnect;
 }
@@ -120,26 +190,46 @@ ags_notation_tactable_interface_init(AgsTactableInterface *tactable)
 }
 
 void
+ags_notation_portlet_interface_init(AgsPortletInterface *portlet)
+{
+  portlet->set_port = ags_notation_set_port;
+  portlet->get_port = ags_notation_get_port;
+  portlet->list_safe_properties = ags_notation_list_safe_properties;
+  portlet->safe_set_property = ags_notation_safe_set_property;
+  portlet->safe_get_property = ags_notation_safe_get_property;
+}
+
+void
 ags_notation_init(AgsNotation *notation)
 {
   notation->flags = 0;
 
+  //TODO:JK: define timestamp
+  notation->timestamp = NULL;
+  
   notation->audio_channel = 0;
   notation->audio = NULL;
 
-  notation->base_frequency = 0;
+  notation->key = g_strdup("violine\0");
+  notation->base_frequency = 440.0;
 
-  notation->tact = g_strdup("1/4\0");
-  notation->bpm = 120;
+  notation->tact = AGS_DEVOUT_DEFAULT_TACT;
+  notation->bpm = 120.0;
 
   notation->maximum_note_length = AGS_NOTATION_MAXIMUM_NOTE_LENGTH;
 
   notation->notes = NULL;
-  notation->start_loop = NULL;
-  notation->end_loop = NULL;
-  notation->offset = 0;
+
+  notation->start_loop = 0.0;
+  notation->end_loop = 0.0;
+  notation->offset = 0.0;
 
   notation->selection = NULL;
+
+  notation->port = NULL;
+
+  notation->current_notes = NULL;
+  notation->next_notes = NULL;
 }
 
 void
@@ -155,15 +245,176 @@ ags_notation_disconnect(AgsConnectable *connectable)
 }
 
 void
+ags_notation_set_property(GObject *gobject,
+			 guint prop_id,
+			 const GValue *value,
+			 GParamSpec *param_spec)
+{
+  AgsNotation *notation;
+
+  notation = AGS_NOTATION(gobject);
+
+  switch(prop_id){
+  case PROP_PORT:
+    {
+      AgsPort *port;
+
+      port = (AgsPort *) g_value_get_object(value);
+
+      if(port == (AgsPort *) notation->port){
+	return;
+      }
+
+      if(notation->port != NULL){
+	g_object_unref(G_OBJECT(notation->port));
+      }
+
+      if(port != NULL){
+	g_object_ref(G_OBJECT(port));
+      }
+
+      notation->port = (GObject *) port;
+    }
+    break;
+  case PROP_CURRENT_NOTES:
+    {
+      AgsPort *port;
+      GList *current_notes, *list;
+
+      current_notes = (GList *) g_value_get_pointer(value);
+
+      port = AGS_PORT(notation->port);
+
+      pthread_mutex_lock(&(port->mutex));
+
+      if(notation->current_notes != NULL){
+	ags_list_free_and_unref_link(notation->current_notes);
+      }
+
+      if(current_notes != NULL){
+	list = current_notes;
+
+	while(list != NULL){
+	  g_object_ref(G_OBJECT(list->data));
+
+	  list = list->next;
+	}
+      }
+
+      notation->current_notes = current_notes;
+
+      pthread_mutex_unlock(&(port->mutex));
+    }
+    break;
+  case PROP_NEXT_NOTES:
+    {
+      AgsPort *port;
+      GList *next_notes, *list;
+
+      next_notes = (GList *) g_value_get_pointer(value);
+
+      port = AGS_PORT(notation->port);
+
+      pthread_mutex_lock(&(port->mutex));
+
+      if(notation->next_notes != NULL){
+	ags_list_free_and_unref_link(notation->next_notes);
+      }
+
+      if(next_notes != NULL){
+	list = next_notes;
+
+	while(list != NULL){
+	  g_object_ref(G_OBJECT(list->data));
+
+	  list = list->next;
+	}
+      }
+
+      notation->next_notes = next_notes;
+
+      pthread_mutex_unlock(&(port->mutex));
+    }
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, param_spec);
+    break;
+  }
+}
+
+void
+ags_notation_get_property(GObject *gobject,
+			  guint prop_id,
+			  GValue *value,
+			  GParamSpec *param_spec)
+{
+  AgsNotation *notation;
+
+  notation = AGS_NOTATION(gobject);
+
+  switch(prop_id){
+  case PROP_PORT:
+    g_value_set_object(value, notation->port);
+    break;
+  case PROP_CURRENT_NOTES:
+    {
+      AgsPort *port;
+      GList *start, *list;
+
+      port = AGS_PORT(notation->port);
+
+      pthread_mutex_lock(&(port->mutex));
+
+      start = 
+	list = g_list_copy(notation->current_notes);
+
+      while(list != NULL){
+	g_object_ref(G_OBJECT(list->data));
+
+	list = list->next;
+      }
+
+      pthread_mutex_unlock(&(port->mutex));
+
+      g_value_set_pointer(value, (gpointer) start);
+    }
+    break;
+  case PROP_NEXT_NOTES:
+    {
+      AgsPort *port;
+      GList *start, *list;
+
+      port = AGS_PORT(notation->port);
+
+      pthread_mutex_lock(&(port->mutex));
+
+      start = 
+	list = g_list_copy(notation->next_notes);
+
+      while(list != NULL){
+	g_object_ref(G_OBJECT(list->data));
+
+	list = list->next;
+      }
+
+      pthread_mutex_unlock(&(port->mutex));
+
+      g_value_set_pointer(value, (gpointer) start);
+    }
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, param_spec);
+    break;
+  }
+}
+
+void
 ags_notation_finalize(GObject *gobject)
 {
   AgsNotation *notation;
   GList *list, *list_next;
 
   notation = AGS_NOTATION(gobject);
-
-  if(notation->tact != NULL)
-    g_free(notation->tact);
 
   ags_list_free_and_unref_link(notation->notes);
 
@@ -173,7 +424,98 @@ ags_notation_finalize(GObject *gobject)
 void
 ags_notation_change_bpm(AgsTactable *tactable, gdouble bpm)
 {
-  /* empty */
+  //TODO:JK: implement me
+}
+
+void
+ags_notation_set_port(AgsPortlet *portlet, AgsPort *port)
+{
+  g_object_set(G_OBJECT(portlet),
+	       "port\0", port,
+	       NULL);
+}
+
+AgsPort*
+ags_notation_get_port(AgsPortlet *portlet)
+{
+  AgsPort *port;
+
+  g_object_get(G_OBJECT(portlet),
+	       "port\0", &port,
+	       NULL);
+
+  return(port);
+}
+
+GList*
+ags_notation_list_safe_properties(AgsPortlet *portlet)
+{
+  static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+  static GList *list = NULL;
+
+  pthread_mutex_lock(&mutex);
+
+  if(list == NULL){
+    list = g_list_prepend(list, "current-notes\0");
+    list = g_list_prepend(list, "next-notes\0");
+  }
+
+  pthread_mutex_unlock(&mutex);
+
+  return(list);
+}
+
+void
+ags_notation_safe_set_property(AgsPortlet *portlet, gchar *property_name, GValue *value)
+{
+  //TODO:JK: add check for safe property
+
+  g_object_set_property(G_OBJECT(portlet),
+			property_name, value);
+}
+
+void
+ags_notation_safe_get_property(AgsPortlet *portlet, gchar *property_name, GValue *value)
+{
+  //TODO:JK: add check for safe property
+
+  g_object_get_property(G_OBJECT(portlet),
+			property_name, value);
+}
+
+GList*
+ags_notation_find_near_timestamp(GList *notation, guint audio_channel,
+				 GObject *gobject)
+{
+  AgsTimestamp *timestamp, *current_timestamp;
+
+  if(gobject == NULL){
+    return(NULL);
+  }
+  
+  timestamp = AGS_TIMESTAMP(gobject);
+
+  while(notation != NULL){
+    if(AGS_NOTATION(notation->data)->audio_channel != audio_channel){
+      notation = notation->next;
+      continue;
+    }
+
+    current_timestamp = AGS_NOTATION(notation->data)->timestamp;
+
+    if((AGS_TIMESTAMP_UNIX & (timestamp->flags)) != 0){
+      if((AGS_TIMESTAMP_UNIX & (current_timestamp->flags)) != 0){
+	if(current_timestamp->timer.unix_time.time_val >= timestamp->timer.unix_time.time_val &&
+	   current_timestamp->timer.unix_time.time_val < timestamp->timer.unix_time.time_val + AGS_NOTATION_DEFAULT_DURATION){
+	  return(notation);
+	}
+      }
+    }
+
+    notation = notation->next;
+  }
+
+  return(NULL);
 }
 
 void
@@ -886,6 +1228,18 @@ ags_notation_insert_from_clipboard(AgsNotation *notation,
       }
     }
   }
+}
+
+GList*
+ags_notation_get_current(AgsNotation *notation)
+{
+  GList *list;
+
+  list = NULL;
+
+  //TODO:JK: get current
+
+  return(list);
 }
 
 AgsNotation*

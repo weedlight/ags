@@ -21,6 +21,7 @@
 
 #include <glib.h>
 #include <glib-object.h>
+
 #include <gtk/gtk.h>
 
 #define AGS_TYPE_NOTEBOOK                (ags_notebook_get_type())
@@ -30,20 +31,60 @@
 #define AGS_IS_NOTEBOOK_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_NOTEBOOK))
 #define AGS_NOTEBOOK_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS (obj, AGS_TYPE_NOTEBOOK, AgsNotebookClass))
 
+#define AGS_NOTEBOOK_TAB(x) ((AgsNotebookTab *)(x))
+
 typedef struct _AgsNotebook AgsNotebook;
 typedef struct _AgsNotebookClass AgsNotebookClass;
+typedef struct _AgsNotebookTab AgsNotebookTab;
+
+typedef enum{
+  AGS_NOTEBOOK_TAB_VISIBLE           = 1,
+  AGS_NOTEBOOK_TAB_MODE_NORMAL       = 1 << 1,
+  AGS_NOTEBOOK_TAB_MODE_OVERLAY      = 1 << 2,
+}AgsNotebookTabFlags;
 
 struct _AgsNotebook
 {
-  GtkNotebook notebook;
+  GtkVBox vbox;
+
+  guint flags;
+
+  GtkHBox *hbox;
+
+  GList *tabs;
+  GtkWidget *child;
 };
 
 struct _AgsNotebookClass
 {
-  GtkNotebookClass notebook;
+  GtkVBoxClass vbox;
+};
+
+struct _AgsNotebookTab
+{
+  guint flags;
+
+  GtkToggleButton *toggle;
+  GObject *notation;
 };
 
 GType ags_notebook_get_type(void);
+
+gint ags_notebook_tab_index(AgsNotebook *notebook,
+			    GObject *notation);
+gint ags_notebook_next_active_tab(AgsNotebook *notebook,
+				  gint position);
+
+gint ags_notebook_add_tab(AgsNotebook *notebook);
+void ags_notebook_insert_tab(AgsNotebook *notebook,
+			     gint position);
+void ags_notebook_remove_tab(AgsNotebook *notebook,
+			     gint nth);
+
+void ags_notebook_add_child(AgsNotebook *notebook,
+			    GtkWidget *child);
+void ags_notebook_remove_child(AgsNotebook *notebook,
+			       GtkWidget *child);
 
 AgsNotebook* ags_notebook_new();
 

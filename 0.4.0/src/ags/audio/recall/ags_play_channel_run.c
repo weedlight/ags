@@ -19,7 +19,11 @@
 #include <ags/audio/recall/ags_play_channel_run.h>
 
 #include <ags-lib/object/ags_connectable.h>
+
+#include <ags/main.h>
+
 #include <ags/object/ags_dynamic_connectable.h>
+#include <ags/object/ags_plugin.h>
 
 #include <ags/audio/ags_devout.h>
 #include <ags/audio/ags_audio.h>
@@ -38,6 +42,7 @@
 void ags_play_channel_run_class_init(AgsPlayChannelRunClass *play_channel_run);
 void ags_play_channel_run_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_play_channel_run_dynamic_connectable_interface_init(AgsDynamicConnectableInterface *dynamic_connectable);
+void ags_play_channel_run_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_play_channel_run_init(AgsPlayChannelRun *play_channel_run);
 void ags_play_channel_run_set_property(GObject *gobject,
 				       guint prop_id,
@@ -73,6 +78,9 @@ enum{
 static gpointer ags_play_channel_run_parent_class = NULL;
 static AgsConnectableInterface *ags_play_channel_run_parent_connectable_interface;
 static AgsDynamicConnectableInterface *ags_play_channel_run_parent_dynamic_connectable_interface;
+static AgsPluginInterface *ags_play_channel_run_parent_plugin_interface;
+
+static const gchar *ags_play_channel_run_plugin_name = "ags-play\0";
 
 GType
 ags_play_channel_run_get_type()
@@ -104,6 +112,12 @@ ags_play_channel_run_get_type()
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_play_channel_run_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };    
+
     ags_type_play_channel_run = g_type_register_static(AGS_TYPE_RECALL_CHANNEL_RUN,
 						       "AgsPlayChannelRun\0",
 						       &ags_play_channel_run_info,
@@ -116,6 +130,10 @@ ags_play_channel_run_get_type()
     g_type_add_interface_static(ags_type_play_channel_run,
 				AGS_TYPE_DYNAMIC_CONNECTABLE,
 				&ags_dynamic_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_play_channel_run,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_play_channel_run);
@@ -177,8 +195,20 @@ ags_play_channel_run_dynamic_connectable_interface_init(AgsDynamicConnectableInt
 }
 
 void
+ags_play_channel_run_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  ags_play_channel_run_parent_plugin_interface = g_type_interface_peek_parent(plugin);
+}
+
+void
 ags_play_channel_run_init(AgsPlayChannelRun *play_channel_run)
 {
+  AGS_RECALL(play_channel_run)->name = "ags-play\0";
+  AGS_RECALL(play_channel_run)->version = AGS_EFFECTS_DEFAULT_VERSION;
+  AGS_RECALL(play_channel_run)->build_id = AGS_BUILD_ID;
+  AGS_RECALL(play_channel_run)->xml_type = "ags-play-channel-run\0";
+  AGS_RECALL(play_channel_run)->port = NULL;
+
   AGS_RECALL(play_channel_run)->flags |= AGS_RECALL_INPUT_ORIENTATED;
   AGS_RECALL(play_channel_run)->child_type = AGS_TYPE_PLAY_RECYCLING;
 
@@ -278,7 +308,13 @@ ags_play_channel_run_get_property(GObject *gobject,
 void
 ags_play_channel_run_finalize(GObject *gobject)
 {
-  /* empty */
+  AgsPlayChannelRun *play_channel_run;
+
+  play_channel_run = AGS_PLAY_CHANNEL_RUN(gobject);
+
+  if(play_channel_run->stream_channel_run != NULL){
+    g_object_unref(G_OBJECT(play_channel_run->stream_channel_run));
+  }
 
   /* call parent */
   G_OBJECT_CLASS(ags_play_channel_run_parent_class)->finalize(gobject);
@@ -316,7 +352,7 @@ ags_play_channel_run_connect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 
   /* stream_channel_run */
   gobject = G_OBJECT(play_channel_run->stream_channel_run);
-
+    
   play_channel_run->done_handler =
     g_signal_connect(gobject, "done\0",
 		     G_CALLBACK(ags_play_channel_run_stream_channel_done_callback), play_channel_run);
@@ -329,8 +365,6 @@ ags_play_channel_run_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectab
   AgsPlayChannelRun *play_channel_run;
   GObject *gobject;
 
-  ags_play_channel_run_parent_dynamic_connectable_interface->disconnect_dynamic(dynamic_connectable);
-
   /* AgsPlayChannelRun */
   play_channel_run = AGS_PLAY_CHANNEL_RUN(dynamic_connectable);
 
@@ -338,9 +372,15 @@ ags_play_channel_run_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectab
   play_channel = AGS_PLAY_CHANNEL(AGS_RECALL_CHANNEL_RUN(play_channel_run)->recall_channel);
 
   /* stream_channel_run */
-  gobject = G_OBJECT(play_channel_run->stream_channel_run);
+  if(play_channel_run->stream_channel_run != NULL &&
+     (AGS_RECALL_RUN_INITIALIZED & (AGS_RECALL(play_channel_run)->flags)) != 0){
+    gobject = G_OBJECT(play_channel_run->stream_channel_run);
 
-  g_signal_handler_disconnect(gobject, play_channel_run->done_handler);
+    g_signal_handler_disconnect(gobject, play_channel_run->done_handler);
+  }
+
+  /* call parent */
+  ags_play_channel_run_parent_dynamic_connectable_interface->disconnect_dynamic(dynamic_connectable);
 }
 
 void
@@ -375,7 +415,7 @@ ags_play_channel_run_resolve_dependencies(AgsRecall *recall)
   AgsRecallDependency *recall_dependency;
   AgsStreamChannelRun *stream_channel_run;
   GList *list;
-  AgsGroupId group_id;
+  AgsRecallID *recall_id;
   guint i, i_stop;
 
   play_channel_run = AGS_PLAY_CHANNEL_RUN(recall);
@@ -383,7 +423,7 @@ ags_play_channel_run_resolve_dependencies(AgsRecall *recall)
   template = AGS_RECALL(ags_recall_find_template(AGS_RECALL_CONTAINER(recall->container)->recall_channel_run)->data);
 
   list = template->dependencies;
-  group_id = recall->recall_id->group_id;
+  recall_id = recall->recall_id;
 
   stream_channel_run = NULL;
 
@@ -393,7 +433,7 @@ ags_play_channel_run_resolve_dependencies(AgsRecall *recall)
     recall_dependency = AGS_RECALL_DEPENDENCY(list->data);
 
     if(AGS_IS_STREAM_CHANNEL_RUN(recall_dependency->dependency)){
-      stream_channel_run = (AgsStreamChannelRun *) ags_recall_dependency_resolve(recall_dependency, group_id);
+      stream_channel_run = (AgsStreamChannelRun *) ags_recall_dependency_resolve(recall_dependency, recall_id);
 
       i++;
     }
@@ -425,7 +465,7 @@ void
 ags_play_channel_run_stream_channel_done_callback(AgsRecall *recall,
 						  AgsPlayChannelRun *play_channel_run)
 {
-  play_channel_run->flags |= AGS_PLAY_CHANNEL_RUN_TERMINATING;
+  //  play_channel_run->flags |= AGS_PLAY_CHANNEL_RUN_TERMINATING;
 }
 
 AgsPlayChannelRun*

@@ -38,25 +38,27 @@ struct _AgsDelayAudio
 {
   AgsRecallAudio recall_audio;
 
-  gdouble bpm;
-  gdouble tact;
+  AgsPort *bpm;
+  AgsPort *tact;
 
-  gdouble notation_delay;
-  gdouble sequencer_delay;
+  AgsPort *notation_delay;
+  AgsPort *sequencer_delay;
 
-  gdouble sequencer_duration;
-  gdouble notation_duration;
+  AgsPort *sequencer_duration;
+  AgsPort *notation_duration;
 };
 
 struct _AgsDelayAudioClass
 {
   AgsRecallAudioClass recall_audio;
 
+  void (*notation_duration_changed)(AgsDelayAudio *delay_audio);
   void (*sequencer_duration_changed)(AgsDelayAudio *delay_audio);
 };
 
 GType ags_delay_audio_get_type();
 
+void ags_delay_audio_notation_duration_changed(AgsDelayAudio *delay_audio);
 void ags_delay_audio_sequencer_duration_changed(AgsDelayAudio *delay_audio);
 
 AgsDelayAudio* ags_delay_audio_new();

@@ -21,12 +21,17 @@
 
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/main.h>
+
+#include <ags/object/ags_plugin.h>
+
 #include <ags/X/ags_pad.h>
 
 #include <ags/audio/ags_channel.h>
 
 void ags_line_class_init(AgsLineClass *line);
 void ags_line_connectable_interface_init(AgsConnectableInterface *connectable);
+void ags_line_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_line_init(AgsLine *line);
 void ags_line_set_property(GObject *gobject,
 			   guint prop_id,
@@ -38,13 +43,23 @@ void ags_line_get_property(GObject *gobject,
 			   GParamSpec *param_spec);
 void ags_line_connect(AgsConnectable *connectable);
 void ags_line_disconnect(AgsConnectable *connectable);
-void ags_line_destroy(GtkObject *object);
-void ags_line_show(GtkWidget *widget);
+gchar* ags_line_get_name(AgsPlugin *plugin);
+void ags_line_set_name(AgsPlugin *plugin, gchar *name);
+gchar* ags_line_get_version(AgsPlugin *plugin);
+void ags_line_set_version(AgsPlugin *plugin, gchar *version);
+gchar* ags_line_get_build_id(AgsPlugin *plugin);
+void ags_line_set_build_id(AgsPlugin *plugin, gchar *build_id);
+gchar* ags_line_get_xml_type(AgsPlugin *plugin);
+void ags_line_set_xml_type(AgsPlugin *plugin, gchar *xml_type);
+GList* ags_line_get_ports(AgsPlugin *plugin);
+void ags_line_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
+xmlNode* ags_line_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 
 void ags_line_real_set_channel(AgsLine *line, AgsChannel *channel);
 
 enum{
   SET_CHANNEL,
+  GROUP_CHANGED,
   LAST_SIGNAL,
 };
 
@@ -81,13 +96,23 @@ ags_line_get_type(void)
       NULL, /* interface_data */
     };
 
-    ags_type_line = g_type_register_static(GTK_TYPE_MENU_ITEM,
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_line_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
+    ags_type_line = g_type_register_static(GTK_TYPE_VBOX,
 					   "AgsLine\0", &ags_line_info,
 					   0);
 
     g_type_add_interface_static(ags_type_line,
 				AGS_TYPE_CONNECTABLE,
 				&ags_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_line,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_line);
@@ -107,6 +132,7 @@ ags_line_class_init(AgsLineClass *line)
   gobject->set_property = ags_line_set_property;
   gobject->get_property = ags_line_get_property;
 
+  /* properties */
   param_spec = g_param_spec_object("pad\0",
 				   "parent pad\0",
 				   "The pad which is its parent\0",
@@ -128,6 +154,8 @@ ags_line_class_init(AgsLineClass *line)
   /* AgsLineClass */
   line->set_channel = ags_line_real_set_channel;
 
+  line->group_changed = NULL;
+
   line_signals[SET_CHANNEL] =
     g_signal_new("set_channel\0",
 		 G_TYPE_FROM_CLASS(line),
@@ -137,34 +165,76 @@ ags_line_class_init(AgsLineClass *line)
 		 g_cclosure_marshal_VOID__OBJECT,
 		 G_TYPE_NONE, 1,
 		 G_TYPE_OBJECT);
+
+  line_signals[GROUP_CHANGED] =
+    g_signal_new("group_changed\0",
+		 G_TYPE_FROM_CLASS(line),
+		 G_SIGNAL_RUN_LAST,
+		 G_STRUCT_OFFSET(AgsLineClass, group_changed),
+		 NULL, NULL,
+		 g_cclosure_marshal_VOID__VOID,
+		 G_TYPE_NONE, 0);
 }
 
 void
 ags_line_connectable_interface_init(AgsConnectableInterface *connectable)
 {
+  connectable->is_ready = NULL;
+  connectable->is_connected = NULL;
   connectable->connect = ags_line_connect;
   connectable->disconnect = ags_line_disconnect;
 }
 
 void
+ags_line_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  plugin->get_name = ags_line_get_name;
+  plugin->set_name = ags_line_set_name;
+  plugin->get_version = ags_line_get_version;
+  plugin->set_version = ags_line_set_version;
+  plugin->get_build_id = ags_line_get_build_id;
+  plugin->set_build_id = ags_line_set_build_id;
+  plugin->get_xml_type = ags_line_get_xml_type;
+  plugin->set_xml_type = ags_line_set_xml_type;
+  plugin->get_ports = ags_line_get_ports;
+  plugin->read = ags_line_read;
+  plugin->write = ags_line_write;
+  plugin->set_ports = NULL;
+}
+
+void
 ags_line_init(AgsLine *line)
 {
-  //  g_signal_connect_after((GObject *) line, "parent_set\0",
-  //			 G_CALLBACK(ags_line_parent_set_callback), (gpointer) line);
+  g_signal_connect_after((GObject *) line, "parent_set\0",
+			 G_CALLBACK(ags_line_parent_set_callback), (gpointer) line);
+
   line->flags = 0;
+
+  line->version = AGS_VERSION;
+  line->build_id = AGS_BUILD_ID;
 
   line->channel = NULL;
 
-  line->table = (GtkTable *) gtk_table_new(2, 2, FALSE);
-  gtk_container_add((GtkContainer *) line, (GtkWidget *) line->table);
+  line->pad = NULL;
 
   line->label = (GtkLabel *) gtk_label_new(NULL);
-  gtk_table_attach(line->table,
-		   (GtkWidget *) line->label,
-		   0, 2,
-		   0, 1,
-		   GTK_FILL|GTK_EXPAND, GTK_FILL|GTK_EXPAND,
-		   0, 0);
+  gtk_box_pack_start(GTK_BOX(line),
+		     GTK_WIDGET(line->label),
+		     FALSE, FALSE,
+		     0);
+
+  line->group = (GtkToggleButton *) gtk_toggle_button_new_with_label("group\0");
+  gtk_toggle_button_set_active(line->group, TRUE);
+  gtk_box_pack_start(GTK_BOX(line),
+		     GTK_WIDGET(line->group),
+		     FALSE, FALSE,
+		     0);
+
+  line->expander = ags_expander_new(1, 1);
+  gtk_box_pack_start(GTK_BOX(line),
+		     GTK_WIDGET(line->expander),
+		     TRUE, TRUE,
+		     0);
 }
 
 void
@@ -184,6 +254,18 @@ ags_line_set_property(GObject *gobject,
 
       pad = (GtkWidget *) g_value_get_object(value);
 
+      if(line->pad == pad){
+	return;
+      }
+
+      if(line->pad != NULL){
+	g_object_unref(G_OBJECT(line->pad));
+      }
+
+      if(pad != NULL){
+	g_object_ref(G_OBJECT(pad));
+      }
+      
       line->pad = pad;
     }
     break;
@@ -213,6 +295,9 @@ ags_line_get_property(GObject *gobject,
   line = AGS_LINE(gobject);
 
   switch(prop_id){
+  case PROP_PAD:
+    g_value_set_object(value, line->pad);
+    break;
   case PROP_CHANNEL:
     g_value_set_object(value, line->channel);
     break;
@@ -232,40 +317,111 @@ ags_line_connect(AgsConnectable *connectable)
   if((AGS_LINE_CONNECTED & (line->flags)) != 0){
     return;
   }
+
+  g_signal_connect_after((GObject *) line->group, "clicked\0",
+			 G_CALLBACK(ags_line_group_clicked_callback), (gpointer) line);
   
   line->flags |= AGS_LINE_CONNECTED;
-
-  /* GtkWidget */
-  g_signal_connect((GObject *) line, "destroy\0",
-		   G_CALLBACK(ags_line_destroy_callback), (gpointer) line);
-
-  g_signal_connect((GObject *) line, "show\0",
-		   G_CALLBACK(ags_line_show_callback), (gpointer) line);
 }
 
 void
 ags_line_disconnect(AgsConnectable *connectable)
 {
-  /* empty */
+  //TODO:JK: implement me
+}
+
+gchar*
+ags_line_get_name(AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
 }
 
 void
-ags_line_destroy(GtkObject *object)
+ags_line_set_name(AgsPlugin *plugin, gchar *name)
 {
-  /* empty */
+  //TODO:JK: implement me
+}
+
+gchar*
+ags_line_get_version(AgsPlugin *plugin)
+{
+  return(AGS_LINE(plugin)->version);
 }
 
 void
-ags_line_show(GtkWidget *widget)
+ags_line_set_version(AgsPlugin *plugin, gchar *version)
 {
-  /* empty */
+  //TODO:JK: implement me
+}
+
+gchar*
+ags_line_get_build_id(AgsPlugin *plugin)
+{
+  return(AGS_LINE(plugin)->build_id);
+}
+
+void
+ags_line_set_build_id(AgsPlugin *plugin, gchar *build_id)
+{
+  //TODO:JK: implement me
+}
+
+gchar*
+ags_line_get_xml_type(AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
+}
+
+void
+ags_line_set_xml_type(AgsPlugin *plugin, gchar *xml_type)
+{
+  //TODO:JK: implement me
+}
+
+GList*
+ags_line_get_ports(AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
+}
+
+void
+ags_line_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+}
+
+xmlNode*
+ags_line_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
 }
 
 void
 ags_line_real_set_channel(AgsLine *line, AgsChannel *channel)
 {
+  if(line->channel == channel){
+    return;
+  }
+
+  if(line->channel != NULL){
+    g_object_unref(G_OBJECT(line->channel));
+  }
+
+  if(channel != NULL){
+    g_object_ref(G_OBJECT(channel));
+  }
+
   line->channel = channel;
 
+  /* set label */
   gtk_label_set_label(line->label, g_strdup_printf("line %d\0", channel->audio_channel));
 }
 
@@ -279,6 +435,27 @@ ags_line_set_channel(AgsLine *line, AgsChannel *channel)
 		line_signals[SET_CHANNEL], 0,
 		channel);
   g_object_unref((GObject *) line);
+}
+
+void
+ags_line_group_changed(AgsLine *line)
+{
+  g_return_if_fail(AGS_IS_LINE(line));
+
+  g_object_ref((GObject *) line);
+  g_signal_emit(G_OBJECT(line),
+		line_signals[GROUP_CHANGED], 0);
+  g_object_unref((GObject *) line);
+}
+
+GList*
+ags_line_find_next_grouped(GList *line)
+{
+  while(line != NULL && !gtk_toggle_button_get_active(AGS_LINE(line->data)->group)){
+    line = line->next;
+  }
+
+  return(line);
 }
 
 AgsLine*

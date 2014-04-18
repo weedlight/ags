@@ -133,20 +133,60 @@ ags_add_audio_signal_finalize(GObject *gobject)
 void
 ags_add_audio_signal_launch(AgsTask *task)
 {
+  AgsDevout *devout;
   AgsAddAudioSignal *add_audio_signal;
-  AgsAudioSignal *audio_signal;
+  AgsAudioSignal *audio_signal, *old_template;
+  AgsRecallID *recall_id;
+  guint attack, delay;
+  guint tic_counter_incr;
 
   add_audio_signal = AGS_ADD_AUDIO_SIGNAL(task);
 
-  /* add audio signal */
-  audio_signal = ags_audio_signal_new((GObject *) add_audio_signal->devout,
+  devout = AGS_DEVOUT(add_audio_signal->devout);
+
+  /* check for template to remove */
+  if((AGS_AUDIO_SIGNAL_TEMPLATE & (add_audio_signal->audio_signal_flags)) != 0){
+    old_template = ags_audio_signal_get_template(add_audio_signal->recycling->audio_signal);
+  }else{
+    old_template = NULL;
+  }
+
+  recall_id = add_audio_signal->recall_id;
+
+  /* create audio signal */
+  audio_signal = ags_audio_signal_new((GObject *) devout,
 				      (GObject *) add_audio_signal->recycling,
-				      (GObject *) add_audio_signal->recall_id);
+				      (GObject *) recall_id);
   audio_signal->flags = add_audio_signal->audio_signal_flags;
+
+  /* delay and attack */
+  tic_counter_incr = devout->tic_counter + 1;
+
+  attack = devout->attack[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+			   0:
+			   tic_counter_incr)];
+  delay = devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+			 0:
+			 tic_counter_incr)];
+  
+  /* add audio signal */
+  ags_recycling_create_audio_signal_with_defaults(add_audio_signal->recycling,
+						  audio_signal,
+						  delay, attack);
+  audio_signal->stream_current = audio_signal->stream_beginning;
   ags_audio_signal_connect(audio_signal);
   
+  /*
+   * emit add_audio_signal on AgsRecycling
+   */
   ags_recycling_add_audio_signal(add_audio_signal->recycling,
 				 audio_signal);
+
+  /* remove template */
+  if(old_template != NULL){
+    ags_recycling_remove_audio_signal(add_audio_signal->recycling,
+				      old_template);
+  }
 }
 
 AgsAddAudioSignal*

@@ -20,12 +20,17 @@
 #include <ags/X/ags_pad_callbacks.h>
 
 #include <ags-lib/object/ags_connectable.h>
+
+#include <ags/main.h>
+
 #include <ags/object/ags_marshal.h>
+#include <ags/object/ags_plugin.h>
 
 #include <ags/X/ags_machine.h>
 
 void ags_pad_class_init(AgsPadClass *pad);
 void ags_pad_connectable_interface_init(AgsConnectableInterface *connectable);
+void ags_pad_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_pad_init(AgsPad *pad);
 void ags_pad_set_property(GObject *gobject,
 			  guint prop_id,
@@ -37,6 +42,17 @@ void ags_pad_get_property(GObject *gobject,
 			  GParamSpec *param_spec);
 void ags_pad_connect(AgsConnectable *connectable);
 void ags_pad_disconnect(AgsConnectable *connectable);
+gchar* ags_pad_get_name(AgsPlugin *plugin);
+void ags_pad_set_name(AgsPlugin *plugin, gchar *name);
+gchar* ags_pad_get_version(AgsPlugin *plugin);
+void ags_pad_set_version(AgsPlugin *plugin, gchar *version);
+gchar* ags_pad_get_build_id(AgsPlugin *plugin);
+void ags_pad_set_build_id(AgsPlugin *plugin, gchar *build_id);
+gchar* ags_pad_get_xml_type(AgsPlugin *plugin);
+void ags_pad_set_xml_type(AgsPlugin *plugin, gchar *xml_type);
+GList* ags_pad_get_ports(AgsPlugin *plugin);
+void ags_pad_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
+xmlNode* ags_pad_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 void ags_pad_destroy(GtkObject *object);
 void ags_pad_show(GtkWidget *widget);
 
@@ -82,6 +98,12 @@ ags_pad_get_type(void)
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_pad_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
     ags_type_pad = g_type_register_static(GTK_TYPE_VBOX,
 					  "AgsPad\0", &ags_pad_info,
 					  0);
@@ -89,6 +111,10 @@ ags_pad_get_type(void)
     g_type_add_interface_static(ags_type_pad,
 				AGS_TYPE_CONNECTABLE,
 				&ags_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_pad,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_pad);
@@ -107,6 +133,8 @@ ags_pad_class_init(AgsPadClass *pad)
 
   gobject->set_property = ags_pad_set_property;
   gobject->get_property = ags_pad_get_property;
+
+  //TODO:JK: add finalize
 
   param_spec = g_param_spec_object("channel\0",
 				   "assigned channel\0",
@@ -145,8 +173,27 @@ ags_pad_class_init(AgsPadClass *pad)
 void
 ags_pad_connectable_interface_init(AgsConnectableInterface *connectable)
 {
+  connectable->is_ready = NULL;
+  connectable->is_connected = NULL;
   connectable->connect = ags_pad_connect;
   connectable->disconnect = ags_pad_disconnect;
+}
+
+void
+ags_pad_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  plugin->get_name = ags_pad_get_name;
+  plugin->set_name = ags_pad_set_name;
+  plugin->get_version = ags_pad_get_version;
+  plugin->set_version = ags_pad_set_version;
+  plugin->get_build_id = ags_pad_get_build_id;
+  plugin->set_build_id = ags_pad_set_build_id;
+  plugin->get_xml_type = ags_pad_get_xml_type;
+  plugin->set_xml_type = ags_pad_set_xml_type;
+  plugin->get_ports = ags_pad_get_ports;
+  plugin->read = ags_pad_read;
+  plugin->write = ags_pad_write;
+  plugin->set_ports = NULL;
 }
 
 void
@@ -160,16 +207,18 @@ ags_pad_init(AgsPad *pad)
 
   pad->flags = 0;
 
-  pad->option = (GtkOptionMenu *) gtk_option_menu_new();
-  menu = (GtkMenu *) gtk_menu_new();
+  pad->version = AGS_VERSION;
+  pad->build_id = AGS_BUILD_ID;
 
-  gtk_option_menu_set_menu(pad->option, (GtkWidget *) menu);
-  gtk_box_pack_start((GtkBox *) pad, (GtkWidget *) pad->option, FALSE, FALSE, 0);
+  pad->cols = 2;
+  pad->expander_set = ags_expander_set_new(1, 1);
+  gtk_box_pack_start((GtkBox *) pad, (GtkWidget *) pad->expander_set, TRUE, TRUE, 0);
 
   hbox = (GtkHBox *) gtk_hbox_new(TRUE, 0);
   gtk_box_pack_start((GtkBox *) pad, (GtkWidget *) hbox, FALSE, FALSE, 0);
 
   pad->group = (GtkToggleButton *) gtk_toggle_button_new_with_label(g_strdup("G\0"));
+  gtk_toggle_button_set_active(pad->group, TRUE);
   gtk_box_pack_start((GtkBox *) hbox, (GtkWidget *) pad->group, FALSE, FALSE, 0);
 
   pad->mute = (GtkToggleButton *) gtk_toggle_button_new_with_label(g_strdup("M\0"));
@@ -248,10 +297,6 @@ ags_pad_connect(AgsConnectable *connectable)
   g_signal_connect((GObject *) pad, "show\0",
 		   G_CALLBACK(ags_pad_show_callback), (gpointer) pad);
 
-  /* GtkOptionMenu */
-  g_signal_connect((GObject *) pad->option, "changed\0",
-		   G_CALLBACK(ags_pad_option_changed_callback), (gpointer) pad);
-
   /* GtkButton */
   g_signal_connect_after((GObject *) pad->group, "clicked\0",
 			 G_CALLBACK(ags_pad_group_clicked_callback), (gpointer) pad);
@@ -263,7 +308,7 @@ ags_pad_connect(AgsConnectable *connectable)
 			 G_CALLBACK(ags_pad_solo_clicked_callback), (gpointer) pad);
 
   /* AgsLine */
-  line_list = gtk_container_get_children(GTK_CONTAINER(pad->option->menu));
+  line_list = gtk_container_get_children(GTK_CONTAINER(pad->expander_set));
 
   while(line_list != NULL){
     ags_connectable_connect(AGS_CONNECTABLE(line_list->data));
@@ -275,13 +320,88 @@ ags_pad_connect(AgsConnectable *connectable)
 void
 ags_pad_disconnect(AgsConnectable *connectable)
 {
-  /* empty */
+  //TODO:JK: implement me
 }
+
+gchar*
+ags_pad_get_name(AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
+}
+
+void
+ags_pad_set_name(AgsPlugin *plugin, gchar *name)
+{
+  //TODO:JK: implement me
+}
+
+gchar*
+ags_pad_get_version(AgsPlugin *plugin)
+{
+  return(AGS_PAD(plugin)->version);
+}
+
+void
+ags_pad_set_version(AgsPlugin *plugin, gchar *version)
+{
+  //TODO:JK: implement me
+}
+
+gchar*
+ags_pad_get_build_id(AgsPlugin *plugin)
+{
+  return(AGS_PAD(plugin)->build_id);
+}
+
+void
+ags_pad_set_build_id(AgsPlugin *plugin, gchar *build_id)
+{
+  //TODO:JK: implement me
+}
+
+gchar*
+ags_pad_get_xml_type(AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
+}
+
+void
+ags_pad_set_xml_type(AgsPlugin *plugin, gchar *xml_type)
+{
+  //TODO:JK: implement me
+}
+
+GList*
+ags_pad_get_ports(AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
+}
+
+void
+ags_pad_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+}
+
+xmlNode*
+ags_pad_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin)
+{
+  //TODO:JK: implement me
+
+  return(NULL);
+}
+
 
 void
 ags_pad_destroy(GtkObject *object)
 {
-  /* empty */
+  //TODO:JK: implement me
 }
 
 void
@@ -292,14 +412,39 @@ ags_pad_show(GtkWidget *widget)
   fprintf(stdout, "ags_pad_show\n\0");
 
   pad = AGS_PAD(widget);
-
-  gtk_widget_show_all(gtk_option_menu_get_menu(pad->option));
 }
 
 void
 ags_pad_real_set_channel(AgsPad *pad, AgsChannel *channel)
 {
+  AgsChannel *current;
+  GList *line;
+
+  if(pad->channel == channel){
+    return;
+  }
+
+  if(pad->channel != NULL){
+    g_object_unref(G_OBJECT(pad->channel));
+  }
+
+  if(channel != NULL){
+    g_object_ref(G_OBJECT(channel));
+  }
+
   pad->channel = channel;
+
+  line = gtk_container_get_children(GTK_CONTAINER(AGS_PAD(pad)->expander_set));
+  current = pad->channel;
+  
+  while(line != NULL){
+    g_object_set(G_OBJECT(line->data),
+		 "channel\0", current,
+		 NULL);
+
+    current = current->next;
+    line = line->next;
+  }
 }
 
 void
@@ -321,7 +466,7 @@ ags_pad_real_resize_lines(AgsPad *pad, GType line_type,
   AgsMachine *machine;
   AgsLine *line;
   AgsChannel *channel;
-  guint i;
+  guint i, j;
 
   //  fprintf(stdout, "ags_pad_real_resize_lines: audio_channels = %u ; audio_channels_old = %u\n\0", audio_channels, audio_channels_old);
 
@@ -330,28 +475,27 @@ ags_pad_real_resize_lines(AgsPad *pad, GType line_type,
     channel = ags_channel_nth(pad->channel, audio_channels_old);
 
     /* create AgsLine */
-    for(i = audio_channels_old; i < audio_channels; i++){
-      line = (AgsLine *) g_object_new(line_type,
-				      "pad\0", pad,
-				      "channel\0", channel,
-				      NULL);
-      channel->line_widget = (GtkWidget *) line;
-      gtk_menu_shell_insert((GtkMenuShell *) pad->option->menu,
-			    (GtkWidget *) line, i);
-
-      channel = channel->next;
-    }
-
-    /* set selected AgsLine in AgsPad */
-    if(audio_channels_old == 0){
-      pad->selected_line = AGS_LINE(gtk_container_get_children((GtkContainer *) pad->option->menu)->data);
+    for(i = audio_channels_old / pad->cols; i < audio_channels / pad->cols; i++){
+      for(j = 0; j < pad->cols; j++){
+	line = (AgsLine *) g_object_new(line_type,
+					"pad\0", pad,
+					"channel\0", channel,
+					NULL);
+	channel->line_widget = (GtkWidget *) line;
+	ags_expander_set_add(pad->expander_set,
+			     (GtkWidget *) line,
+			     j, i,
+			     1, 1);
+	
+	channel = channel->next;
+      }
     }
 
     /* check if we should show and connect the AgsLine */
     if(machine != NULL && GTK_WIDGET_VISIBLE((GtkWidget *) machine)){
       GList *list;
 
-      list = g_list_nth(gtk_container_get_children(GTK_CONTAINER(gtk_option_menu_get_menu(pad->option))),
+      list = g_list_nth(gtk_container_get_children(GTK_CONTAINER(pad->expander_set)),
 			audio_channels_old);
 
       /* show and connect AgsLine */
@@ -368,7 +512,7 @@ ags_pad_real_resize_lines(AgsPad *pad, GType line_type,
     GList *list, *list_start;
 
     list_start =
-      list = g_list_nth(gtk_container_get_children(GTK_CONTAINER(gtk_option_menu_get_menu(pad->option))),
+      list = g_list_nth(gtk_container_get_children(GTK_CONTAINER(pad->expander_set)),
 			audio_channels);
     
     while(list != NULL){

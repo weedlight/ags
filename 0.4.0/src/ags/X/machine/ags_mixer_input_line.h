@@ -35,17 +35,9 @@
 typedef struct _AgsMixerInputLine AgsMixerInputLine;
 typedef struct _AgsMixerInputLineClass AgsMixerInputLineClass;
 
-typedef enum{
-  AGS_MIXER_INPUT_LINE_MAPPED_RECALL  =  1,
-}AgsMixerInputLineFlags;
-
 struct _AgsMixerInputLine
 {
   AgsLine line;
-
-  guint flags;
-
-  GtkVScale *volume;
 };
 
 struct _AgsMixerInputLineClass
