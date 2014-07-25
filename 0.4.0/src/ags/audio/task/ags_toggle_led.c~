@@ -1,5 +1,0 @@
-  ags_led_unset_active(AGS_LED(g_list_nth(toggle_led->led,
-					  drum->active_led)->data));
-
-  ags_led_set_active(AGS_LED(g_list_nth(toggle_led->led,
-					nth_run)->data));
