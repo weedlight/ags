@@ -591,21 +591,36 @@
 <!ELEMENT ags-drum EMPTY>
 <!ATTLIST ags-drum
 	  id               ID         #REQUIRED
+	  tact             NMTOKEN    #REQUIRED
+	  length           NMTOKEN    #REQUIRED
+	  bank-index-0     NMTOKEN    #REQUIRED
+	  bank-index-1     NMTOKEN    #REQUIRED
+	  loop             CDATA      #IMPLIED
 	  >
 
 <!ELEMENT ags-matrix EMPTY>
 <!ATTLIST ags-matrix
 	  id               ID         #REQUIRED
+	  tact             NMTOKEN    #REQUIRED
+	  length           NMTOKEN    #REQUIRED
+	  bank-index       NMTOKEN    #REQUIRED
+	  loop             CDATA      #IMPLIED
 	  >
 
 <!ELEMENT ags-synth EMPTY>
 <!ATTLIST ags-synth
 	  id               ID         #REQUIRED
+	  lower            NMTOKEN    #REQUIRED
+	  loop-begin       NMTOKEN    #REQUIRED
+	  loop-end         NMOTKEN    #REQUIRED
 	  >
 
 <!ELEMENT ags-ffplayer EMPTY>
 <!ATTLIST ags-ffplayer
 	  id               ID         #REQUIRED
+	  filename         CDATA      #IMPLIED
+	  preset           CDATA      #IMPLIED
+	  instrument       CDATA      #IMPLIED
 	  >
 
 <!ELEMENT ags-pad-list (ags-pad*)>
@@ -614,7 +629,7 @@
 	  scope            CDATA      #REQUIRED
 	  >
 
-<!ELEMENT ags-pad (ags-line-list, (ags-mixer-input-pad|ags-mixer-output-pad|ags-drum-input-pad|ags-drum-output-pad))>
+<!ELEMENT ags-pad (ags-line-list, (ags-panel-input-pad|ags-mixer-input-pad|ags-mixer-output-pad|ags-drum-input-pad|ags-drum-output-pad|ags-synth-input-pad))>
 <!ATTLIST ags-pad
 	  type             CDATA      #REQUIRED
 	  id               ID         #REQUIRED
@@ -623,6 +638,14 @@
 	  flags            PCDATA     #REQUIRED
 	  rows             NMTOKEN    #REQUIRED
 	  cols             NMTOKEN    #REQUIRED
+	  group            CDATA      "true"
+	  mute             CDATA      "false"
+	  solo             CDATA      "false"
+	  >
+
+<!ELEMENT ags-panel-input-pad EMPTY>
+<!ATTLIST ags-panel-input-pad
+	  id               ID         #REQUIRED
 	  >
 
 <!ELEMENT ags-mixer-input-pad EMPTY>
@@ -638,6 +661,7 @@
 <!ELEMENT ags-drum-input-pad EMPTY>
 <!ATTLIST ags-drum-input-pad
 	  id               ID         #REQUIRED
+	  edit             CDATA      #REQUIRED
 	  >
 
 <!ELEMENT ags-drum-output-pad EMPTY>
@@ -645,7 +669,12 @@
 	  id               ID         #REQUIRED
 	  >
 
-<!ELEMENT ags-line (ags-line-member-list, (ags-drum-input-line|ags-drum-output-line))>
+<!ELEMENT ags-synth-input-pad EMPTY>
+<!ATTLIST ags-synth-input-pad
+	  id               ID         #REQUIRED
+	  >
+
+<!ELEMENT ags-line (ags-line-member-list, (ags-panel-input-line|ags-mixer-input-line|ags-drum-input-line|ags-drum-output-line|ags-synth-input-line))>
 <!ATTLIST ags-line
 	  type             CDATA      #REQUIRED
 	  id               ID         #REQUIRED
@@ -658,6 +687,22 @@
 	  bottom-attach    NMTOKEN    #REQUIRED
 	  rows             NMTOKEN    #REQUIRED
 	  cols             NMTOKEN    #REQUIRED
+	  grouped          NMTOKEN    #REQUIRED
+	  >
+
+<!ELEMENT ags-panel-input-line EMPTY>
+<!ATTLIST ags-panel-input-line
+	  id               ID         #REQUIRED
+	  >
+
+<!ELEMENT ags-mixer-input-line EMPTY>
+<!ATTLIST ags-mixer-input-line
+	  id               ID         #REQUIRED
+	  >
+
+<!ELEMENT ags-mixer-output-line EMPTY>
+<!ATTLIST ags-mixer-output-line
+	  id               ID         #REQUIRED
 	  >
 
 <!ELEMENT ags-drum-input-line EMPTY>
@@ -670,6 +715,22 @@
 	  id               ID         #REQUIRED
 	  >
 
+<!ELEMENT ags-synth-input-line (ags-oscillator)>
+<!ATTLIST ags-synth-input-line
+	  id               ID         #REQUIRED	  
+	  >
+
+<!ELEMENT ags-oscillator EMPTY>
+<!ATTLIST ags-oscillator
+	  id               ID         #REQUIRED
+	  wave             CDATA      #REQUIRED
+	  attack           NMTOKEN    #REQUIRED
+	  frame-count      NMTOKEN    #REQUIRED
+	  frequency        NMTOKEN    #REQUIRED
+	  phase            NMTOKEN    #REQUIRED
+	  volume           NMTOKEN    #REQUIRED
+	  >
+
 <!ELEMENT ags-line-member-list (ags-line-member*)>
 <!ATTLIST ags-line-member-list
 	  id               ID         #REQUIRED
@@ -680,6 +741,7 @@
 	  id                   ID         #REQUIRED
 	  flags                PCDATA     #REQUIRED
 	  widget-type          CDATA      "AgsDial"
+	  label                CDATA      #IMPLIED
 	  port                 CDATA      #REQUIRED
 	  task-type            CDATA      #REQUIRED
 	  left-attach          NMTOKEN    #REQUIRED
@@ -772,7 +834,7 @@
 	  >
 
 <!-- editor -->
-<!ELEMENT ags-editor (ags-parameter, ags-toolbar, ags-notebook)>
+<!ELEMENT ags-editor (ags-toolbar, ags-notebook)>
 <!ATTLIST ags-editor
 	  id               ID         #REQUIRED
 	  version          CDATA      #REQUIRED
@@ -787,6 +849,11 @@
 	  tic              CDATA      "1/1"
 	  zoom             CDATA      "1:4"
 	  mode             CDATA      "multi-channel"
+	  >
+
+<!ELEMENT ags-machine-selector (ags-parameter)>
+<!ATTLIST ags-machine-selector
+	  id               ID         #REQUIRED
 	  >
 
 <!ELEMENT ags-notebook (ags-notebook-tab-list)>
@@ -834,7 +901,7 @@
 	  id               ID         #REQUIRED
 	  encoding         CDATA      "base64"
 	  demuxer          CDATA      "raw"
-	  channels         NMTOKEN    "2"
+	  length           NMTOKEN    #IMPLIED
 	  >
 
 <!-- file link list -->
@@ -843,12 +910,11 @@
 	  id               ID         #REQUIRED
 	  >
 
-<!ELEMENT ags-file-link (ags-timestamp)>
+<!ELEMENT ags-file-link (ags-embedded-audio?, ags-timestamp)>
 <!ATTLIST ags-file-link
 	  id               ID         #REQUIRED
-	  type             CDATA      "xpath"
-	  mode             CDATA      "mix"
-	  file             CDATA      #REQUIRED
+	  type             CDATA      "url"
+	  filename         CDATA      #REQUIRED
 	  delay            CDATA      #REQUIRED <!-- start renamed -->
 	  >
 

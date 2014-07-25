@@ -309,7 +309,9 @@ ags_audio_signal_finalize(GObject *gobject)
 
   audio_signal = AGS_AUDIO_SIGNAL(gobject);
 
+#ifdef AGS_DEBUG
   g_message("finalize AgsAudioSignal\0");
+#endif
 
   if((AGS_AUDIO_SIGNAL_TEMPLATE & (audio_signal->flags)) != 0)
     g_warning("AGS_AUDIO_SIGNAL_TEMPLATE: destroying\n\0");
@@ -323,10 +325,10 @@ ags_audio_signal_finalize(GObject *gobject)
   if(audio_signal->recall_id != NULL)
     g_object_unref(audio_signal->recall_id);
 
-  if(audio_signal->stream_beginning != NULL)
-    ags_list_free_and_free_link(audio_signal->stream_beginning);
-
-  g_message("post: finalize AgsAudioSignal\0");
+  if(audio_signal->stream_beginning != NULL){
+    g_list_free_full(audio_signal->stream_beginning,
+		     g_free);
+  }
 
   /* call parent */
   G_OBJECT_CLASS(ags_audio_signal_parent_class)->finalize(gobject);
@@ -479,6 +481,7 @@ ags_audio_signal_stream_resize(AgsAudioSignal *audio_signal, guint length)
     if(length != 0){
       stream_end = stream->prev;
       stream_end->next = NULL;
+      audio_signal->stream_end = stream_end;
     }else{
       audio_signal->stream_beginning = NULL;
       audio_signal->stream_current = NULL;
@@ -702,7 +705,7 @@ ags_audio_signal_copy_buffer_to_buffer(signed short *destination, guint dchannel
   guint i;
 
   for(i = 0; i < size; i++){
-    destination[0] = (signed short) ((0xffff) & ((int)destination[0] + (int)source[0]));
+    destination[0] = (signed short) (((int)destination[0] + (int)source[0]));
 
     destination += dchannels;
     source += schannels;

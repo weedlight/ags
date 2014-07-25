@@ -343,11 +343,13 @@ ags_recycling_create_audio_signal_with_defaults(AgsRecycling *recycling,
 			     attack +
 			     template->loop_end) %
 			    AGS_DEVOUT_DEFAULT_BUFFER_SIZE);
-  //  audio_signal->length = template->length;
-  
+
+  ags_audio_signal_stream_resize(audio_signal,
+				 template->length);
+    
   audio_signal->delay = delay;
   audio_signal->attack = attack;
-  
+
   ags_audio_signal_duplicate_stream(audio_signal,
 				    template);
 }
@@ -361,12 +363,9 @@ ags_recycling_create_audio_signal_with_frame_count(AgsRecycling *recycling,
   AgsDevout *devout;
   AgsAudioSignal *template;
   GList *stream, *template_stream, *template_loop;
-  guint k, template_k;
-  guint loop_frames;
-  guint frames_looped_copied, frames_copied;
-  gboolean enter_loop;
-
-  g_message("ags_recycling_create_audio_signal_with_frame_count: before\n\0");
+  guint frames_copied;
+  guint loop_start, loop_attack;
+  gboolean enter_loop, initial_loop;
 
   /* some init */
   template = ags_audio_signal_get_template(recycling->audio_signal);
@@ -377,17 +376,21 @@ ags_recycling_create_audio_signal_with_frame_count(AgsRecycling *recycling,
 
   audio_signal->recycling = (GObject *) recycling;
 
+  //TODO:JK: remove
+  delay = 0;
+  attack = 0;
+
   /* resize */
   ags_audio_signal_stream_resize(audio_signal,
-				 delay +
-				 (guint) ceil(((double) attack +
+				 (guint) ceil(((double) delay +
+					       (double) attack +
 					       (double) frame_count) /
 					      (double) devout->buffer_size));
   
   if(template->length == 0)
     return;
 
-  audio_signal->last_frame = frame_count % devout->buffer_size;
+  audio_signal->last_frame = (delay + frame_count + attack) % devout->buffer_size;
 
   /* generic copying */
   stream = audio_signal->stream_beginning;
@@ -395,74 +398,67 @@ ags_recycling_create_audio_signal_with_frame_count(AgsRecycling *recycling,
 
   frames_copied = 0;
 
+  loop_start = template->loop_start;
+
+  initial_loop = TRUE;
+
   /* loop related copying */
-  template_loop = g_list_nth(template->stream_beginning,
-			     (guint) floor((double)(frame_count - template->loop_start) / devout->buffer_size));
+  if(frame_count >= template->loop_start){
+    template_loop = g_list_nth(template->stream_beginning,
+			       (guint) floor((double)loop_start / devout->buffer_size));
 
-  if(frame_count - template->loop_start - template->loop_end > 0){
-    loop_frames = frame_count - template->loop_start - template->loop_end;
+    enter_loop = TRUE;
   }else{
-    loop_frames = 0;
+    template_loop = NULL;
+    enter_loop = FALSE;
   }
-
-  frames_looped_copied = 0;
-  k = attack;
-  template_k = 0;
-
-  enter_loop = TRUE;
 
   /* the copy loops */
-  while(stream != NULL && template_stream != NULL){
-    if(enter_loop && template->loop_start <= frames_copied && template->loop_end > frames_copied){
-      for(; stream != NULL && frames_looped_copied < loop_frames;){
-	template_k = template->loop_start % devout->buffer_size;
+  while(stream != NULL && template_stream != NULL && frames_copied < frame_count){
+    if(frames_copied + devout->buffer_size < loop_start &&
+       frames_copied < frame_count){
+      ags_audio_signal_copy_buffer_to_buffer(&(((short *) stream->data)[attack]), 1,
+					     (short *) template_stream->data, 1,
+					     devout->buffer_size - attack);
+
+      if(stream->next != NULL && attack != 0){
+	ags_audio_signal_copy_buffer_to_buffer((short *) stream->next->data, 1,
+					       &(((short *) template_stream->data)[devout->buffer_size - attack]), 1,
+					       attack);
+      }
+    }
+
+    if(enter_loop &&
+       ((frames_copied > loop_start || frames_copied + devout->buffer_size > loop_start) ||
+	(frames_copied < frame_count))){
+      if(template_stream == NULL){
 	template_stream = template_loop;
-
-	if(k == devout->buffer_size){
-	  k = 0;
-	  stream = stream->next;
-	}
-
-	if(template_k == devout->buffer_size){
-	  template_k = 0;
-	  template_stream = template_stream->next;
-	}
-
-	for(;
-	    template_stream != NULL && frames_looped_copied < loop_frames && k < devout->buffer_size && template_k < devout->buffer_size;
-	    k++, template_k++, frames_looped_copied++){
-
-	  /* copy audio data from template to new AgsAudioSignal */
-	  ((signed short*) stream->data)[k] = ((signed short*) template_stream->data)[template_k];    
-	}
       }
 
-      frames_copied += frames_looped_copied;
-      enter_loop = FALSE;
-    }
-
-
-    for(; stream != NULL && frames_copied < loop_frames;){
-      if(k == devout->buffer_size){
-	k = 0;
-	stream = stream->next;
+      if(initial_loop &&
+	 (loop_start % devout->buffer_size) == 0){
+	loop_attack = 0;
+      }else{
+	loop_attack = loop_start % devout->buffer_size;
       }
 
-      if(template_k == devout->buffer_size){
-	template_k = 0;
-	template_stream = template_stream->next;
-      }
+      initial_loop = FALSE;
 
-      for(;
-	  template_stream != NULL && frames_looped_copied < loop_frames && k < devout->buffer_size && template_k < devout->buffer_size;
-	  k++, template_k++, frames_copied++){
-	/* copy audio data from template to new AgsAudioSignal */
-	((signed short*) stream->data)[k] = ((signed short*) template_stream->data)[template_k];
+      ags_audio_signal_copy_buffer_to_buffer(&(((short *) stream->data)[loop_attack]), 1,
+					     &(((short *) template_stream->data)[devout->buffer_size - loop_attack]), 1,
+					     devout->buffer_size - loop_attack);
+      
+      if(loop_attack != 0 && stream->next != NULL){
+	ags_audio_signal_copy_buffer_to_buffer(&(((short *) stream->next->data)[loop_attack]), 1,
+					       &(((short *) template_stream->data)[devout->buffer_size - loop_attack]), 1,
+					       loop_attack);
       }
     }
+
+    stream = stream->next;
+    template_stream = template_stream->next;
+    frames_copied += devout->buffer_size;
   }
-
-  g_message("ags_recycling_create_audio_signal_with_frame_count: after\n\0");
 }
 
 AgsRecycling*
@@ -499,7 +495,7 @@ ags_recycling_position(AgsRecycling *start_recycling, AgsRecycling *end_region,
   current = start_recycling;
   position = -1;
 
-  while(current != end_region){
+  while(current != NULL && current != end_region){
     position++;
 
     if(current == recycling){

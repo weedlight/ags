@@ -35,10 +35,10 @@ ags_note_edit_drawing_area_expose_event(GtkWidget *widget, GdkEventExpose *event
   editor = (AgsEditor *) gtk_widget_get_ancestor(GTK_WIDGET(note_edit),
 						 AGS_TYPE_EDITOR);
 
-  if(editor->selected != NULL){
+  if(editor->selected_machine != NULL){
     AgsMachine *machine;
 
-    machine = (AgsMachine *) g_object_get_data((GObject *) editor->selected, g_type_name(AGS_TYPE_MACHINE));
+    machine = editor->selected_machine;
 
     if(machine != NULL){
       cairo_t *cr;
@@ -137,9 +137,9 @@ ags_note_edit_drawing_area_button_press_event (GtkWidget *widget, GdkEventButton
   editor = (AgsEditor *) gtk_widget_get_ancestor(GTK_WIDGET(note_edit),
 						 AGS_TYPE_EDITOR);
 
-  if(editor->selected != NULL &&
+  if(editor->selected_machine != NULL &&
      event->button == 1 &&
-     (machine = (AgsMachine *) g_object_get_data((GObject *) editor->selected, (char *) g_type_name(AGS_TYPE_MACHINE))) != NULL){
+     (machine = editor->selected_machine) != NULL){
     AgsToolbar *toolbar;
 
     toolbar = editor->toolbar;
@@ -163,7 +163,7 @@ ags_note_edit_drawing_area_button_press_event (GtkWidget *widget, GdkEventButton
 
     if((AGS_NOTE_EDIT_ADDING_NOTE & (note_edit->flags)) != 0 ||
        (AGS_NOTE_EDIT_POSITION_CURSOR & (note_edit->flags)) != 0){
-      tact = exp2(8.0 - (double) gtk_option_menu_get_history(editor->toolbar->tact));
+      tact = exp2(8.0 - (double) gtk_combo_box_get_active(editor->toolbar->tact));
       
       if(AGS_IS_PANEL(machine)){
       }else if(AGS_IS_MIXER(machine)){
@@ -200,6 +200,7 @@ ags_note_edit_drawing_area_button_release_event(GtkWidget *widget, GdkEventButto
     guint note_x, note_y;
     guint note_offset_x1;
     gint history;
+    gint selected_channel;
 
     if(note_edit->control.x0 >= note_edit->map_width)
       note_edit->control.x0 = note_edit->map_width - 1;
@@ -231,23 +232,26 @@ ags_note_edit_drawing_area_button_release_event(GtkWidget *widget, GdkEventButto
 	  ags_notation_add_note(AGS_NOTATION(list_notation->data), note0, FALSE);
 	}
       }
+      break;
     case 1:
       {
 	gint i;
 
 	i = 0;
-	
-	while((list_notation = g_list_nth(list_notation,
-					  ags_notebook_next_active_tab(editor->notebook,
-								       i))) != NULL){
+
+	while((selected_channel = ags_notebook_next_active_tab(editor->notebook,
+							       i)) != -1){
+	  list_notation = g_list_nth(machine->audio->notation,
+				     selected_channel);
+
 	  note0 = ags_note_duplicate(note);
 
 	  ags_notation_add_note(AGS_NOTATION(list_notation->data), note0, FALSE);
 
-	  list_notation = list_notation->next;
 	  i++;
 	}
       }
+      break;
     case 2:
       {
 	while(list_notation != NULL){
@@ -258,6 +262,7 @@ ags_note_edit_drawing_area_button_release_event(GtkWidget *widget, GdkEventButto
 	  list_notation = list_notation->next;
 	}
       }
+      break;
     }
 
     fprintf(stdout, "x0 = %llu\nx1 = %llu\ny  = %llu\n\n\0", (long long unsigned int) note->x[0], (long long unsigned int) note->x[1], (long long unsigned int) note->y);
@@ -322,12 +327,15 @@ ags_note_edit_drawing_area_button_release_event(GtkWidget *widget, GdkEventButto
     GList *list_notation;
     guint x, y;
     gint history;
+    gint selected_channel;
 
     x = note_edit->control.x0_offset + note_edit->control.x0;
     y = note_edit->control.y0_offset + note_edit->control.y0;
 
     x = (guint) ceil((double) x / (double) (note_edit->control_unit.control_width));
     y = (guint) floor((double) y / (double) (note_edit->control_height));
+
+    g_message("%d, %d\0", x, y);
 
     /* select notes */
     list_notation = machine->audio->notation;
@@ -348,9 +356,11 @@ ags_note_edit_drawing_area_button_release_event(GtkWidget *widget, GdkEventButto
 
       i = 0;
 
-      while((list_notation = g_list_nth(list_notation,
-					ags_notebook_next_active_tab(editor->notebook,
-								     i))) != NULL){
+      while((selected_channel = ags_notebook_next_active_tab(editor->notebook,
+							     i)) != -1){
+	list_notation = g_list_nth(machine->audio->notation,
+				   selected_channel);
+
 	ags_notation_remove_note_at_position(AGS_NOTATION(list_notation->data),
 					     x, y);
 
@@ -432,20 +442,20 @@ ags_note_edit_drawing_area_button_release_event(GtkWidget *widget, GdkEventButto
   editor = (AgsEditor *) gtk_widget_get_ancestor(GTK_WIDGET(note_edit),
 						 AGS_TYPE_EDITOR);
 
-  if(editor->selected != NULL && event->button == 1){
+  if(editor->selected_machine != NULL && event->button == 1){
     cairo_t *cr;
 
     note_edit->control.x1 = (guint) event->x;
     note_edit->control.y1 = (guint) event->y;
 
-    machine = AGS_MACHINE(g_object_get_data((GObject *) editor->selected, (char *) g_type_name(AGS_TYPE_MACHINE)));
+    machine = editor->selected_machine;
     note = note_edit->control.note;
 
     /* store the events position */
     note_edit->control.x1_offset = (guint) round((double) note_edit->hscrollbar->scrollbar.range.adjustment->value);
     note_edit->control.y1_offset = (guint) round((double) note_edit->vscrollbar->scrollbar.range.adjustment->value);
 
-    tact = exp2(8.0 - (double) gtk_option_menu_get_history(editor->toolbar->tact));
+    tact = exp2(8.0 - (double) gtk_combo_box_get_active(editor->toolbar->tact));
 
     cr = gdk_cairo_create(widget->window);
     cairo_push_group(cr);
@@ -681,20 +691,20 @@ ags_note_edit_drawing_area_motion_notify_event (GtkWidget *widget, GdkEventMotio
   editor = (AgsEditor *) gtk_widget_get_ancestor(GTK_WIDGET(note_edit),
 						 AGS_TYPE_EDITOR);
 
-  if(editor->selected != NULL){
+  if(editor->selected_machine != NULL){
     cairo_t *cr;
 
     prev_x1 = note_edit->control.x1;
     note_edit->control.x1 = (guint) event->x;
     note_edit->control.y1 = (guint) event->y;
 
-    machine = AGS_MACHINE(g_object_get_data((GObject *) editor->selected, (char *) g_type_name(AGS_TYPE_MACHINE)));
+    machine = editor->selected_machine;
     note = note_edit->control.note;
 
     note_edit->control.x1_offset = (guint) round((double) note_edit->hscrollbar->scrollbar.range.adjustment->value);
     note_edit->control.y1_offset = (guint) round((double) note_edit->vscrollbar->scrollbar.range.adjustment->value);
 
-    tact = exp2(8.0 - (double) gtk_option_menu_get_history(editor->toolbar->tact));
+    tact = exp2(8.0 - (double) gtk_combo_box_get_active(editor->toolbar->tact));
 
     cr = gdk_cairo_create(widget->window);
     cairo_push_group(cr);

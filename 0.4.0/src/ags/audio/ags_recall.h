@@ -35,8 +35,8 @@
 
 #define AGS_RECALL_HANDLER(handler)    ((AgsRecallHandler *)(handler))
 
-#define AGS_RECALL_DEFAULT_VERSION "0.4.0-beta\0"
-#define AGS_RECALL_DEFAULT_BUILD_ID "0.4.0-beta\0"
+#define AGS_RECALL_DEFAULT_VERSION "0.4.0\0"
+#define AGS_RECALL_DEFAULT_BUILD_ID "CEST 22-06-2014 03:07\0"
 
 typedef struct _AgsRecall AgsRecall;
 typedef struct _AgsRecallClass AgsRecallClass;
@@ -151,6 +151,7 @@ GType ags_recall_get_type();
 void ags_recall_set_flags(AgsRecall *recall, guint flags);
 
 void ags_recall_resolve_dependencies(AgsRecall *reall);
+void ags_recall_child_added(AgsRecall *parent, AgsRecall *child);
 
 void ags_recall_run_init_pre(AgsRecall *recall);
 void ags_recall_run_init_inter(AgsRecall *recall);
@@ -180,6 +181,7 @@ void ags_recall_add_dependency(AgsRecall *recall, AgsRecallDependency *dependenc
 void ags_recall_remove_dependency(AgsRecall *recall, AgsRecall *template);
 GList* ags_recall_get_dependencies(AgsRecall *recall);
 
+void ags_recall_remove_child(AgsRecall *recall, AgsRecall *child);
 void ags_recall_add_child(AgsRecall *recall, AgsRecall *child);
 GList* ags_recall_get_children(AgsRecall *recall);
 

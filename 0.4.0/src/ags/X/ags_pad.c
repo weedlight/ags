@@ -42,17 +42,10 @@ void ags_pad_get_property(GObject *gobject,
 			  GParamSpec *param_spec);
 void ags_pad_connect(AgsConnectable *connectable);
 void ags_pad_disconnect(AgsConnectable *connectable);
-gchar* ags_pad_get_name(AgsPlugin *plugin);
-void ags_pad_set_name(AgsPlugin *plugin, gchar *name);
 gchar* ags_pad_get_version(AgsPlugin *plugin);
 void ags_pad_set_version(AgsPlugin *plugin, gchar *version);
 gchar* ags_pad_get_build_id(AgsPlugin *plugin);
 void ags_pad_set_build_id(AgsPlugin *plugin, gchar *build_id);
-gchar* ags_pad_get_xml_type(AgsPlugin *plugin);
-void ags_pad_set_xml_type(AgsPlugin *plugin, gchar *xml_type);
-GList* ags_pad_get_ports(AgsPlugin *plugin);
-void ags_pad_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
-xmlNode* ags_pad_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 void ags_pad_destroy(GtkObject *object);
 void ags_pad_show(GtkWidget *widget);
 
@@ -182,17 +175,17 @@ ags_pad_connectable_interface_init(AgsConnectableInterface *connectable)
 void
 ags_pad_plugin_interface_init(AgsPluginInterface *plugin)
 {
-  plugin->get_name = ags_pad_get_name;
-  plugin->set_name = ags_pad_set_name;
+  plugin->get_name = NULL;
+  plugin->set_name = NULL;
   plugin->get_version = ags_pad_get_version;
   plugin->set_version = ags_pad_set_version;
   plugin->get_build_id = ags_pad_get_build_id;
   plugin->set_build_id = ags_pad_set_build_id;
-  plugin->get_xml_type = ags_pad_get_xml_type;
-  plugin->set_xml_type = ags_pad_set_xml_type;
-  plugin->get_ports = ags_pad_get_ports;
-  plugin->read = ags_pad_read;
-  plugin->write = ags_pad_write;
+  plugin->get_xml_type = NULL;
+  plugin->set_xml_type = NULL;
+  plugin->get_ports = NULL;
+  plugin->read = NULL;
+  plugin->write = NULL;
   plugin->set_ports = NULL;
 }
 
@@ -206,6 +199,8 @@ ags_pad_init(AgsPad *pad)
 		   G_CALLBACK(ags_pad_parent_set_callback), (gpointer) pad);
 
   pad->flags = 0;
+
+  pad->name = NULL;
 
   pad->version = AGS_VERSION;
   pad->build_id = AGS_BUILD_ID;
@@ -324,20 +319,6 @@ ags_pad_disconnect(AgsConnectable *connectable)
 }
 
 gchar*
-ags_pad_get_name(AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
-}
-
-void
-ags_pad_set_name(AgsPlugin *plugin, gchar *name)
-{
-  //TODO:JK: implement me
-}
-
-gchar*
 ags_pad_get_version(AgsPlugin *plugin)
 {
   return(AGS_PAD(plugin)->version);
@@ -346,7 +327,11 @@ ags_pad_get_version(AgsPlugin *plugin)
 void
 ags_pad_set_version(AgsPlugin *plugin, gchar *version)
 {
-  //TODO:JK: implement me
+  AgsPad *pad;
+
+  pad = AGS_PAD(plugin);
+
+  pad->version = version;
 }
 
 gchar*
@@ -358,45 +343,12 @@ ags_pad_get_build_id(AgsPlugin *plugin)
 void
 ags_pad_set_build_id(AgsPlugin *plugin, gchar *build_id)
 {
-  //TODO:JK: implement me
+  AgsPad *pad;
+
+  pad = AGS_PAD(plugin);
+
+  pad->build_id = build_id;
 }
-
-gchar*
-ags_pad_get_xml_type(AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
-}
-
-void
-ags_pad_set_xml_type(AgsPlugin *plugin, gchar *xml_type)
-{
-  //TODO:JK: implement me
-}
-
-GList*
-ags_pad_get_ports(AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
-}
-
-void
-ags_pad_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-}
-
-xmlNode*
-ags_pad_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
-}
-
 
 void
 ags_pad_destroy(GtkObject *object)
@@ -408,8 +360,6 @@ void
 ags_pad_show(GtkWidget *widget)
 {
   AgsPad *pad;
-
-  fprintf(stdout, "ags_pad_show\n\0");
 
   pad = AGS_PAD(widget);
 }
@@ -475,8 +425,8 @@ ags_pad_real_resize_lines(AgsPad *pad, GType line_type,
     channel = ags_channel_nth(pad->channel, audio_channels_old);
 
     /* create AgsLine */
-    for(i = audio_channels_old / pad->cols; i < audio_channels / pad->cols; i++){
-      for(j = 0; j < pad->cols; j++){
+    for(i = audio_channels_old; i < audio_channels;){
+      for(j = audio_channels_old % pad->cols; j < pad->cols && i < audio_channels; j++, i++){
 	line = (AgsLine *) g_object_new(line_type,
 					"pad\0", pad,
 					"channel\0", channel,
@@ -484,7 +434,7 @@ ags_pad_real_resize_lines(AgsPad *pad, GType line_type,
 	channel->line_widget = (GtkWidget *) line;
 	ags_expander_set_add(pad->expander_set,
 			     (GtkWidget *) line,
-			     j, i,
+			     j, i / pad->cols,
 			     1, 1);
 	
 	channel = channel->next;
@@ -544,6 +494,20 @@ void ags_pad_resize_lines(AgsPad *pad, GType line_type,
 		line_type,
 		audio_channels, audio_channels_old);
   g_object_unref((GObject *) pad);
+}
+
+void
+ags_pad_find_port(AgsPad *pad)
+{
+  GList *line;
+
+  line = gtk_container_get_children(GTK_CONTAINER(pad->expander_set));
+
+  while(line != NULL){
+    ags_line_find_port(AGS_LINE(line->data));
+
+    line = line->next;
+  }
 }
 
 AgsPad*

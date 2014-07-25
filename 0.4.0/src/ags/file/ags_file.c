@@ -59,6 +59,7 @@ void ags_file_get_property(GObject *gobject,
 void ags_file_finalize(GObject *gobject);
 
 void ags_file_real_write(AgsFile *file);
+void ags_file_real_write_concurrent(AgsFile *file);
 void ags_file_real_write_resolve(AgsFile *file);
 
 void ags_file_real_read(AgsFile *file);
@@ -76,6 +77,7 @@ enum{
 
 enum{
   WRITE,
+  WRITE_CONCURRENT,
   WRITE_RESOLVE,
   READ,
   READ_RESOLVE,
@@ -177,6 +179,7 @@ ags_file_class_init(AgsFileClass *file)
 
   /* AgsFileClass */
   file->write = ags_file_real_write;
+  file->write_concurrent = ags_file_real_write_concurrent;
   file->write_resolve = ags_file_real_write_resolve;
   file->read = ags_file_real_read;
   file->read_resolve = ags_file_real_read_resolve;
@@ -187,6 +190,15 @@ ags_file_class_init(AgsFileClass *file)
 		 G_TYPE_FROM_CLASS(file),
 		 G_SIGNAL_RUN_LAST,
 		 G_STRUCT_OFFSET(AgsFileClass, write),
+		 NULL, NULL,
+		 g_cclosure_marshal_VOID__VOID,
+		 G_TYPE_NONE, 0);
+
+  file_signals[WRITE_CONCURRENT] =
+    g_signal_new("write_concurrent\0",
+		 G_TYPE_FROM_CLASS(file),
+		 G_SIGNAL_RUN_LAST,
+		 G_STRUCT_OFFSET(AgsFileClass, write_concurrent),
 		 NULL, NULL,
 		 g_cclosure_marshal_VOID__VOID,
 		 G_TYPE_NONE, 0);
@@ -468,6 +480,10 @@ ags_file_find_id_ref_by_xpath(AgsFile *file, gchar *xpath)
   xmlNode **node;
   guint i;
 
+  if(file == NULL || xpath == NULL || !g_str_has_prefix(xpath, "xpath=\0")){
+    return;
+  }
+
   xpath = &(xpath[6]);
 
   /* Create xpath evaluation context */
@@ -480,13 +496,10 @@ ags_file_find_id_ref_by_xpath(AgsFile *file, gchar *xpath)
   }
 
   /* Evaluate xpath expression */
-  xmlXPathSetContextNode(file->doc->children,
-			 xpath_context);
-
   xpath_object = xmlXPathEval(xpath, xpath_context);
 
   if(xpath_object == NULL) {
-    fprintf(stderr,"Error: unable to evaluate xpath expression \"%s\"\n", xpath);
+    g_message("Error: unable to evaluate xpath expression \"%s\"", xpath);
     xmlXPathFreeContext(xpath_context); 
 
     return(NULL);
@@ -610,8 +623,6 @@ ags_file_real_write(AgsFile *file)
   fflush(file_out);
   fclose(file_out);
 
-  g_message(file->filename);
-
   /*free the document */
   xmlFreeDoc(file->doc);
 
@@ -638,6 +649,170 @@ ags_file_write(AgsFile *file)
   g_object_unref(G_OBJECT(file));
 }
 
+void
+ags_file_real_write_concurrent(AgsFile *file)
+{
+  AgsMain *ags_main;
+  AgsThread *main_loop, *gui_thread, *task_thread;
+  xmlNode *root_node;
+  FILE *file_out;
+  GList *list;
+  xmlChar *buffer;
+  int size;
+
+  xmlNode *parent, *node, *child;
+  gchar *id;
+
+  main_loop = AGS_MAIN(file->ags_main)->main_loop;
+  gui_thread = AGS_AUDIO_LOOP(main_loop)->gui_thread;
+  task_thread = AGS_AUDIO_LOOP(main_loop)->task_thread;
+
+  ags_main = file->ags_main;
+
+  file->doc = xmlNewDoc("1.0\0");
+  root_node = xmlNewNode(NULL, "ags\0");
+  xmlDocSetRootElement(file->doc, root_node);
+
+  parent = root_node;
+
+  /* write clip board */
+  //TODO:JK: implement me
+
+  /* write scripts */
+  //TODO:JK: implement me
+
+  /* write cluster */
+  //TODO:JK: implement me
+
+  /* write client */
+  //TODO:JK: implement me
+
+  /* write server */
+  //TODO:JK: implement me
+
+  /* the main code - write main */
+  ags_thread_lock(main_loop);
+
+  id = ags_id_generator_create_uuid();
+
+  node = xmlNewNode(NULL,
+		    "ags-main\0");
+
+  ags_file_add_id_ref(file,
+		      g_object_new(AGS_TYPE_FILE_ID_REF,
+				   "main\0", file->ags_main,
+				   "file\0", file,
+				   "node\0", node,
+				   "xpath\0", g_strdup_printf("xpath=//*[@id='%s']\0", id),
+				   "reference\0", ags_main,
+				   NULL));
+
+  xmlNewProp(node,
+	     AGS_FILE_ID_PROP,
+	     id);
+
+  xmlNewProp(node,
+	     AGS_FILE_FLAGS_PROP,
+	     g_strdup_printf("%x\0", ((~AGS_MAIN_CONNECTED) & (AGS_MAIN(ags_main)->flags))));
+
+  xmlNewProp(node,
+	     AGS_FILE_VERSION_PROP,
+	     AGS_MAIN(ags_main)->version);
+
+  xmlNewProp(node,
+	     AGS_FILE_BUILD_ID_PROP,
+	     AGS_MAIN(ags_main)->build_id);
+
+  /* add to parent */
+  xmlAddChild(parent,
+	      node);
+
+  ags_thread_unlock(main_loop);
+
+  /* child elements */
+  /* thread */
+  ags_thread_lock(main_loop);
+
+  ags_file_write_thread(file,
+			node,
+			AGS_THREAD(AGS_MAIN(ags_main)->main_loop));
+
+  ags_thread_unlock(main_loop);
+
+  /* thread pool */
+  ags_thread_lock(main_loop);
+
+  ags_file_write_thread_pool(file,
+			     node,
+			     AGS_THREAD_POOL(AGS_MAIN(ags_main)->thread_pool));
+
+  ags_thread_unlock(main_loop);
+
+  /* write audio */
+  ags_thread_lock(task_thread);
+
+  ags_file_write_devout_list(file,
+			     node,
+			     AGS_MAIN(ags_main)->devout);
+
+  ags_thread_unlock(task_thread);
+
+  ags_thread_lock(gui_thread);
+
+  ags_file_write_window(file,
+			node,
+			AGS_MAIN(ags_main)->window);
+
+  ags_thread_unlock(gui_thread);
+
+  /* write embedded audio */
+  //TODO:JK: implement me
+
+  /* write file link */
+  //TODO:JK: implement me
+ 
+  /* write history */
+  //TODO:JK: implement me
+
+  /* resolve */
+  ags_file_write_resolve(file);
+
+  /* 
+   * Dumping document to file
+   */
+  //  xmlSaveFormatFileEnc(file->filename, file->doc, "UTF-8\0", 1);
+  xmlDocDumpFormatMemoryEnc(file->doc, &buffer, &size, file->encoding, TRUE);
+
+  file_out = fopen(file->filename, "w+\0");
+  fwrite(buffer, size, sizeof(xmlChar), file_out);
+  fflush(file_out);
+  fclose(file_out);
+
+  /*free the document */
+  xmlFreeDoc(file->doc);
+
+  /*
+   *Free the global variables that may
+   *have been allocated by the parser.
+   */
+  xmlCleanupParser();
+
+  /*
+   * this is to debug memory for regression tests
+   */
+  xmlMemoryDump();
+}
+
+void
+ags_file_write_concurrent(AgsFile *file)
+{
+  g_return_if_fail(AGS_IS_FILE(file));
+
+  g_object_ref(G_OBJECT(file));
+  g_signal_emit(G_OBJECT(file),
+		file_signals[WRITE_CONCURRENT], 0);
+  g_object_unref(G_OBJECT(file));
+}
 
 void
 ags_file_real_write_resolve(AgsFile *file)
@@ -734,12 +909,14 @@ ags_file_real_read(AgsFile *file)
 
   /* resolve */
   ags_file_read_resolve(file);
+
+  gtk_widget_show_all(GTK_WIDGET(ags_main->window));
   
-  g_message("========== resolved\0");
+  g_message("XML file resolved\0");
 
   ags_connectable_connect(AGS_CONNECTABLE(ags_main));
 
-  g_message("========== connected\0");
+  g_message("XML file connected\0");
 
   /* start */
   ags_file_read_start(file);
@@ -831,6 +1008,7 @@ void
 ags_file_read_main(AgsFile *file, xmlNode *node, GObject **ags_main)
 {
   AgsMain *gobject;
+  GList *list;
   xmlNode *child;
   int argc;
   static const gchar *argv[] = {
@@ -887,7 +1065,7 @@ ags_file_read_main(AgsFile *file, xmlNode *node, GObject **ags_main)
 			     child,
 			     (AgsThread **) &(gobject->main_loop));
 	
-	AGS_AUDIO_LOOP(gobject->main_loop)->main = gobject;
+	AGS_AUDIO_LOOP(gobject->main_loop)->ags_main = gobject;
       }else if(!xmlStrncmp("ags-thread-pool\0",
 			   child->name,
 			   16)){
@@ -912,7 +1090,18 @@ ags_file_read_main(AgsFile *file, xmlNode *node, GObject **ags_main)
     child = child->next;
   }
 
-  gtk_widget_show_all(GTK_WIDGET(gobject->window));
+  //TODO:JK: should be resolved
+  AGS_TASK_THREAD(AGS_AUDIO_LOOP(gobject->main_loop)->task_thread)->thread_pool = gobject->thread_pool;
+  AGS_THREAD_POOL(gobject->thread_pool)->parent = AGS_THREAD(AGS_AUDIO_LOOP(gobject->main_loop)->task_thread);
+
+  list = AGS_THREAD_POOL(gobject->thread_pool)->returnable_thread;
+
+  while(list != NULL){
+    ags_thread_add_child(AGS_THREAD(AGS_AUDIO_LOOP(gobject->main_loop)->task_thread),
+			 AGS_THREAD(list->data));
+
+    list = list->next;
+  }
 }
 
 void
@@ -941,7 +1130,7 @@ ags_file_write_main(AgsFile *file, xmlNode *parent, GObject *ags_main)
 
   xmlNewProp(node,
 	     AGS_FILE_FLAGS_PROP,
-	     g_strdup_printf("%x\0", AGS_MAIN(ags_main)->flags));
+	     g_strdup_printf("%x\0", ((~AGS_MAIN_CONNECTED) & (AGS_MAIN(ags_main)->flags))));
 
   xmlNewProp(node,
 	     AGS_FILE_VERSION_PROP,

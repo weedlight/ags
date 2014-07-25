@@ -24,6 +24,7 @@
 #include <glib-object.h>
 
 #include <ags/thread/ags_thread.h>
+#include <ags/thread/ags_async_queue.h>
 
 #define AGS_TYPE_AUDIO_LOOP                (ags_audio_loop_get_type())
 #define AGS_AUDIO_LOOP(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_AUDIO_LOOP, AgsAudioLoop))
@@ -60,9 +61,14 @@ struct _AgsAudioLoop
   volatile guint tic;
   volatile guint last_sync;
 
+  GCond cond;
+  GMutex mutex;
+
   gdouble frequency;
 
-  GObject *main;
+  GObject *ags_main;
+
+  AgsAsyncQueue *async_queue;
   
   AgsThread *task_thread;
   AgsThread *gui_thread;
@@ -99,6 +105,6 @@ void ags_audio_loop_remove_channel(AgsAudioLoop *audio_loop, GObject *channel);
 void ags_audio_loop_add_recall(AgsAudioLoop *audio_loop, GObject *recall);
 void ags_audio_loop_remove_recall(AgsAudioLoop *audio_loop, GObject *recall);
 
-AgsAudioLoop* ags_audio_loop_new(GObject *devout, GObject *main);
+AgsAudioLoop* ags_audio_loop_new(GObject *devout, GObject *ags_main);
 
 #endif /*__AGS_AUDIO_LOOP_H__*/

@@ -146,9 +146,9 @@ ags_append_audio_launch(AgsTask *task)
 			   append_audio->audio);
 
   /* add to server registry */
-  server = AGS_MAIN(audio_loop->main)->server;
+  server = AGS_MAIN(audio_loop->ags_main)->server;
 
-  if((AGS_SERVER_RUNNING & (server->flags)) != 0){
+  if(server != NULL && (AGS_SERVER_RUNNING & (server->flags)) != 0){
     ags_connectable_add_to_registry(AGS_CONNECTABLE(append_audio->audio));
   }
 }

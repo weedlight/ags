@@ -32,15 +32,25 @@
 #define AGS_IS_IPATCH_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_IPATCH))
 #define AGS_IPATCH_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_IPATCH, AgsIpatchClass))
 
+#define AGS_IPATCH_DEFAULT_CHANNELS 2
+
 #define AGS_IPATCH_READ "r"
 #define AGS_IPATCH_WRITE "w"
 
 typedef struct _AgsIpatch AgsIpatch;
 typedef struct _AgsIpatchClass AgsIpatchClass;
 
+typedef enum{
+  AGS_IPATCH_DLS2   = 1,
+  AGS_IPATCH_SF2    = 1 << 1,
+  AGS_IPATCH_GIG    = 1 << 2,
+}AgsIpatchFlags;
+
 struct _AgsIpatch
 {
   GObject object;
+
+  guint flags;
 
   AgsDevout *devout;
   GList *audio_signal;
@@ -52,8 +62,13 @@ struct _AgsIpatch
   IpatchFileHandle *handle;
   GError *error;
 
-  IpatchContainer *container;
+  IpatchBase *base;
   GObject *reader;
+
+  IpatchList *samples;
+  GList *iter;
+
+  guint nth_level;
 };
 
 struct _AgsIpatchClass
@@ -62,18 +77,6 @@ struct _AgsIpatchClass
 };
 
 GType ags_ipatch_get_type();
-
-void ags_ipatch_read_audio_signal(AgsIpatch *ipatch);
-
-gboolean ags_iofuncs_open(IpatchFileHandle *handle, const char *mode, GError **err);
-void ags_iofuncs_close(IpatchFileHandle *handle);
-GIOStatus ags_iofuncs_read(IpatchFileHandle *handle, gpointer buf, guint size,
-			   guint *bytes_read, GError **err);
-GIOStatus ags_iofuncs_write(IpatchFileHandle *handle, gconstpointer buf, guint size,
-			    GError **err);
-GIOStatus ags_iofuncs_seek(IpatchFileHandle *handle, int offset, GSeekType type, GError **err);
-int ags_iofuncs_getfd(IpatchFileHandle *handle);
-int ags_iofuncs_get_size(IpatchFile *file, GError **err);
 
 AgsIpatch* ags_ipatch_new();
 

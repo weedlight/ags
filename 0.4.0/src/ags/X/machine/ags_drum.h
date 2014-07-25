@@ -49,11 +49,14 @@ struct _AgsDrum
 
   guint flags;
 
+  gchar *name;
+  gchar *xml_type;
+
   GtkButton *open;
 
   GtkCheckButton *loop_button;
   GtkSpinButton *length_spin;
-  GtkOptionMenu *tact;
+  GtkComboBox *tact;
 
   GtkToggleButton *run;
 

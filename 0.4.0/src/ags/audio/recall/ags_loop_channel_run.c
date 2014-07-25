@@ -62,6 +62,8 @@ void ags_loop_channel_run_connect(AgsConnectable *connectable);
 void ags_loop_channel_run_disconnect(AgsConnectable *connectable);
 void ags_loop_channel_run_connect_dynamic(AgsDynamicConnectable *dynamic_connectable);
 void ags_loop_channel_run_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable);
+void ags_loop_channel_run_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
+xmlNode* ags_loop_channel_run_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 
 void ags_loop_channel_run_resolve_dependencies(AgsRecall *recall);
 AgsRecall* ags_loop_channel_run_duplicate(AgsRecall *recall,
@@ -80,6 +82,11 @@ void ags_loop_channel_run_loop_callback(AgsCountBeatsAudioRun *count_beats_audio
 void ags_loop_channel_run_stop_callback(AgsCountBeatsAudioRun *count_beats_audio_run,
 					guint run_order,
 					AgsLoopChannelRun *loop_channel_run);
+
+void ags_loop_channel_run_write_resolve_dependency(AgsFileLookup *file_lookup,
+						   GObject *recall);
+void ags_loop_channel_run_read_resolve_dependency(AgsFileLookup *file_lookup,
+						  GObject *recall);
 
 enum{
   PROP_0,
@@ -203,6 +210,9 @@ void
 ags_loop_channel_run_plugin_interface_init(AgsPluginInterface *plugin)
 {
   ags_loop_channel_run_parent_plugin_interface = g_type_interface_peek_parent(plugin);
+
+  plugin->read = ags_loop_channel_run_read;
+  plugin->write = ags_loop_channel_run_write;
 }
 
 void
@@ -399,6 +409,105 @@ ags_loop_channel_run_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectab
 }
 
 void
+ags_loop_channel_run_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin)
+{
+  AgsFileLookup *file_lookup;
+  xmlNode *iter;
+
+  /* read parent */
+  ags_loop_channel_run_parent_plugin_interface->read(file, node, plugin);
+
+  /* read depenendency */
+  iter = node->children;
+
+  while(iter != NULL){
+    if(iter->type == XML_ELEMENT_NODE){
+      if(!xmlStrncmp(iter->name,
+		     "ags-dependency-list\0",
+		     19)){
+	xmlNode *dependency_node;
+
+	dependency_node = iter->children;
+
+	while(dependency_node != NULL){
+	  if(dependency_node->type == XML_ELEMENT_NODE){
+	    if(!xmlStrncmp(dependency_node->name,
+			   "ags-dependency\0",
+			   15)){
+	      file_lookup = (AgsFileLookup *) g_object_new(AGS_TYPE_FILE_LOOKUP,
+							   "file\0", file,
+							   "node\0", dependency_node,
+							   "reference\0", G_OBJECT(plugin),
+							   NULL);
+	      ags_file_add_lookup(file, (GObject *) file_lookup);
+	      g_signal_connect(G_OBJECT(file_lookup), "resolve\0",
+			       G_CALLBACK(ags_loop_channel_run_read_resolve_dependency), G_OBJECT(plugin));
+	    }
+	  }
+	  
+	  dependency_node = dependency_node->next;
+	}
+      }
+    }
+
+    iter = iter->next;
+  }
+}
+
+xmlNode*
+ags_loop_channel_run_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin)
+{
+  AgsFileLookup *file_lookup;
+  xmlNode *node, *child;
+  xmlNode *dependency_node;
+  GList *list;
+  gchar *id;
+
+  /* write parent */
+  node = ags_loop_channel_run_parent_plugin_interface->write(file, parent, plugin);
+
+  /* write dependencies */
+  child = xmlNewNode(NULL,
+		     "ags-dependency-list\0");
+
+  xmlNewProp(child,
+	     AGS_FILE_ID_PROP,
+	     ags_id_generator_create_uuid());
+
+  xmlAddChild(node,
+	      child);
+
+  list = AGS_RECALL(plugin)->dependencies;
+
+  while(list != NULL){
+    id = ags_id_generator_create_uuid();
+
+    dependency_node = xmlNewNode(NULL,
+				 "ags-dependency\0");
+
+    xmlNewProp(dependency_node,
+	       AGS_FILE_ID_PROP,
+	       id);
+
+    xmlAddChild(child,
+		dependency_node);
+
+    file_lookup = (AgsFileLookup *) g_object_new(AGS_TYPE_FILE_LOOKUP,
+						 "file\0", file,
+						 "node\0", dependency_node,
+						 "reference\0", G_OBJECT(plugin),
+						 NULL);
+    ags_file_add_lookup(file, (GObject *) file_lookup);
+    g_signal_connect(G_OBJECT(file_lookup), "resolve\0",
+		     G_CALLBACK(ags_loop_channel_run_write_resolve_dependency), G_OBJECT(plugin));
+
+    list = list->next;
+  }
+
+  return(node);
+}
+
+void
 ags_loop_channel_run_resolve_dependencies(AgsRecall *recall)
 {
   AgsAudio *audio;
@@ -476,12 +585,12 @@ ags_loop_channel_run_create_audio_signals(AgsLoopChannelRun *loop_channel_run)
   /* delay and attack */
   tic_counter_incr = devout->tic_counter + 1;
 
-  attack = devout->attack[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
-			   0:
-			   tic_counter_incr)];
-  delay = devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
-			 0:
-			 tic_counter_incr)];
+  attack = 0;// devout->attack[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+  //		   0:
+  //			   tic_counter_incr)];
+  delay = 0; //devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+  //		 0:
+  //			 tic_counter_incr)];
 
   while(recycling != AGS_RECALL_CHANNEL_RUN(loop_channel_run)->source->last_recycling->next){
     audio_signal = ags_audio_signal_new((GObject *) devout,
@@ -493,14 +602,21 @@ ags_loop_channel_run_create_audio_signals(AgsLoopChannelRun *loop_channel_run)
     ags_recycling_create_audio_signal_with_defaults(recycling,
 						    audio_signal,
 						    delay, attack);
-    audio_signal->stream_current = audio_signal->stream_beginning;
 
     ags_connectable_connect(AGS_CONNECTABLE(audio_signal));    
     ags_recycling_add_audio_signal(recycling,
 				   audio_signal);
 
+    /*
+     * unref AgsAudioSignal because AgsLoopChannelRun has no need for it
+     * if you need a valid reference to audio_signal you have to g_object_ref(audio_signal)
+     */
+    //FIXME:JK:
+
+#ifdef AGS_DEBUG
     g_message("+++++++++++++++++++++++++\n\nloop channel created: AgsAudioSignal#%llx[%u]\n\n+++++++++++++++++++++++++\0",
 	      (long long unsigned int) audio_signal, audio_signal->length);
+#endif
 
     recycling = recycling->next;
   }
@@ -512,9 +628,11 @@ ags_loop_channel_run_start_callback(AgsCountBeatsAudioRun *count_beats_audio_run
 				    AgsLoopChannelRun *loop_channel_run)
 {
   
+#ifdef AGS_DEBUG
   g_message("ags_loop_channel_run_start_callback - run_order: %u; %u\n\0",
 	    AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order,
 	    run_order);
+#endif 
 
   //TODO:JK: optimize tree see deprecated AgsRunOrder
   //  if(AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order == run_order){
@@ -527,9 +645,11 @@ ags_loop_channel_run_loop_callback(AgsCountBeatsAudioRun *count_beats_audio_run,
 				   guint run_order,
 				   AgsLoopChannelRun *loop_channel_run)
 {
+#ifdef AGS_DEBUG
   g_message("ags_loop_channel_run_loop_callback - run_order: %u; %u\0",
 	    AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order,
 	    run_order);
+#endif
 
   //TODO:JK: optimize tree see deprecated AgsRunOrder  
   //  if(AGS_RECALL_CHANNEL_RUN(loop_channel_run)->run_order == run_order){
@@ -542,6 +662,41 @@ ags_loop_channel_run_stop_callback(AgsCountBeatsAudioRun *count_beats_audio_run,
 				   guint run_order,
 				   AgsLoopChannelRun *loop_channel_run)
 {
+}
+
+void
+ags_loop_channel_run_write_resolve_dependency(AgsFileLookup *file_lookup,
+					      GObject *recall)
+{
+  AgsFileIdRef *id_ref;
+  gchar *id;
+
+  id_ref = (AgsFileIdRef *) ags_file_find_id_ref_by_reference(file_lookup->file, file_lookup->ref);
+
+  id = xmlGetProp(id_ref->node, AGS_FILE_ID_PROP);
+
+  xmlNewProp(file_lookup->node,
+	     "xpath\0",
+  	     g_strdup_printf("xpath=//*[@id='%s']\0", id));
+}
+
+void
+ags_loop_channel_run_read_resolve_dependency(AgsFileLookup *file_lookup,
+					     GObject *recall)
+{
+  AgsFileIdRef *id_ref;
+  gchar *xpath;
+
+  xpath = (gchar *) xmlGetProp(file_lookup->node,
+			       "xpath\0");
+
+  id_ref = (AgsFileIdRef *) ags_file_find_id_ref_by_xpath(file_lookup->file, xpath);
+
+  if(AGS_IS_DELAY_AUDIO_RUN(id_ref->ref)){
+    g_object_set(G_OBJECT(recall),
+		 "count-beats-audio-run\0", id_ref->ref,
+		 NULL);
+  }
 }
 
 AgsLoopChannelRun*

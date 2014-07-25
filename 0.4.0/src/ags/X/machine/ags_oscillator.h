@@ -23,6 +23,10 @@
 #include <glib-object.h>
 #include <gtk/gtk.h>
 
+#include <libxml/tree.h>
+
+#include <ags/file/ags_file.h>
+
 #define AGS_TYPE_OSCILLATOR                (ags_oscillator_get_type())
 #define AGS_OSCILLATOR(obj)                (G_TYPE_CHECK_INSTANCE_CAST(obj, AGS_TYPE_OSCILLATOR, AgsOscillator))
 #define AGS_OSCILLATOR_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST(class, AGS_TYPE_OSCILLATOR, AgsOscillatorClass))
@@ -35,9 +39,7 @@ typedef struct _AgsOscillatorClass AgsOscillatorClass;
 
 struct _AgsOscillator
 {
-  GtkMenuItem item;
-
-  GtkFrame *frame;
+  GtkFrame frame;
 
   GtkComboBox *wave;
   gulong wave_handler;
@@ -60,10 +62,13 @@ struct _AgsOscillator
 
 struct _AgsOscillatorClass
 {
-  GtkMenuItemClass item;
+  GtkFrameClass frame;
 };
 
 GType ags_oscillator_get_type(void);
+
+void ags_file_read_oscillator(AgsFile *file, xmlNode *node, AgsOscillator **oscillator);
+xmlNode* ags_file_write_oscillator(AgsFile *file, xmlNode *parent, AgsOscillator *oscillator);
 
 AgsOscillator* ags_oscillator_new();
 

@@ -32,7 +32,9 @@ void ags_file_link_finalize(GObject *gobject);
 
 enum{
   PROP_0,
-  PROP_URL,
+  PROP_FILENAME,
+  PROP_DATA,
+  PROP_TIMESTAMP,
 };
 
 static gpointer ags_file_link_parent_class = NULL;
@@ -81,20 +83,40 @@ ags_file_link_class_init(AgsFileLinkClass *file_link)
   gobject->finalize = ags_file_link_finalize;
 
   /* properties */
-  param_spec = g_param_spec_string("url\0",
-				   "the URL\0",
-				   "The URL to locate the file\0",
+  param_spec = g_param_spec_string("filename\0",
+				   "the filename\0",
+				   "The filename to locate the file\0",
 				   NULL,
 				   G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
-				  PROP_URL,
+				  PROP_FILENAME,
+				  param_spec);
+
+  param_spec = g_param_spec_string("data\0",
+				   "the data\0",
+				   "The embedded data\0",
+				   NULL,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_DATA,
+				  param_spec);
+
+  param_spec = g_param_spec_object("timestamp\0",
+				   "timestamp\0",
+				   "The timestamp\0",
+				   G_TYPE_OBJECT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_TIMESTAMP,
 				  param_spec);
 }
 
 void
 ags_file_link_init(AgsFileLink *file_link)
 {
-  file_link->url = NULL;
+  file_link->filename = NULL;
+  file_link->data = NULL;
+  file_link->timestamp = NULL;
 }
 
 void
@@ -108,16 +130,51 @@ ags_file_link_set_property(GObject *gobject,
   file_link = AGS_FILE_LINK(gobject);
   
   switch(prop_id){
-  case PROP_URL:
+  case PROP_FILENAME:
     {
-      char *url;
+      char *filename;
 
-      url = (char *) g_value_get_string(value);
+      filename = (char *) g_value_get_string(value);
 
-      if(file_link->url != NULL)
-	g_free(file_link->url);
+      if(filename == file_link->filename){
+	return;
+      }
 
-      file_link->url = url;
+      file_link->filename = g_strdup(filename);
+    }
+    break;
+  case PROP_DATA:
+    {
+      char *data;
+
+      data = (char *) g_value_get_string(value);
+
+      if(data == file_link->data){
+	return;
+      }
+
+      file_link->data = data;
+    }
+    break;
+  case PROP_TIMESTAMP:
+    {
+      GObject *timestamp;
+
+      timestamp = (GObject *) g_value_get_object(value);
+
+      if(timestamp == file_link->timestamp){
+	return;
+      }
+
+      if(file_link->timestamp != NULL){
+	g_object_unref(file_link->timestamp);
+      }
+
+      if(timestamp != NULL){
+	g_object_ref(timestamp);
+      }
+
+      file_link->timestamp = timestamp;
     }
     break;
   default:
@@ -137,10 +194,21 @@ ags_file_link_get_property(GObject *gobject,
   file_link = AGS_FILE_LINK(gobject);
   
   switch(prop_id){
-  case PROP_URL:
+  case PROP_FILENAME:
     {
-      g_value_set_string(value, file_link->url);
+      g_value_set_string(value, file_link->filename);
     }
+    break;
+  case PROP_DATA:
+    {
+      g_value_set_string(value, file_link->data);
+    }
+    break;
+  case PROP_TIMESTAMP:
+    {
+      g_value_set_object(value, file_link->timestamp);
+    }
+    break;
   default:
     G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, param_spec);
     break;
@@ -150,6 +218,13 @@ ags_file_link_get_property(GObject *gobject,
 void
 ags_file_link_finalize(GObject *gobject)
 {
+  AgsFileLink *file_link;
+
+  file_link = AGS_FILE_LINK(gobject);
+
+  if(file_link->timestamp != NULL){
+    g_object_unref(file_link->timestamp);
+  }
 }
 
 AgsFileLink*

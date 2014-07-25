@@ -21,6 +21,8 @@
 #include <ags-lib/object/ags_connectable.h>
 #include <ags/object/ags_playable.h>
 
+#include <ags/audio/file/ags_ipatch_sf2_reader.h>
+
 void ags_ipatch_class_init(AgsIpatchClass *ipatch);
 void ags_ipatch_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_ipatch_playable_interface_init(AgsPlayableInterface *playable);
@@ -40,7 +42,11 @@ void ags_ipatch_disconnect(AgsConnectable *connectable);
 
 gboolean ags_ipatch_open(AgsPlayable *playable, gchar *name);
 guint ags_ipatch_level_count(AgsPlayable *playable);
+guint ags_ipatch_nth_level(AgsPlayable *playable);
 gchar** ags_ipatch_sublevel_names(AgsPlayable *playable);
+void ags_ipatch_level_select(AgsPlayable *playable,
+			     guint nth_level, gchar *sublevel_name,
+			     GError **error);
 void ags_ipatch_iter_start(AgsPlayable *playable);
 gboolean ags_ipatch_iter_next(AgsPlayable *playable);
 void ags_ipatch_info(AgsPlayable *playable,
@@ -50,6 +56,9 @@ void ags_ipatch_info(AgsPlayable *playable,
 signed short* ags_ipatch_read(AgsPlayable *playable, guint channel,
 			      GError **error);
 void ags_ipatch_close(AgsPlayable *playable);
+GList* ags_ipatch_read_audio_signal(AgsPlayable *playable,
+				    AgsDevout *devout,
+				    guint start_channel, guint channels);
 
 static gpointer ags_ipatch_parent_class = NULL;
 static AgsConnectableInterface *ags_ipatch_parent_connectable_interface;
@@ -158,9 +167,10 @@ ags_ipatch_playable_interface_init(AgsPlayableInterface *playable)
 
   playable->open = ags_ipatch_open;
 
+  playable->nth_level = ags_ipatch_nth_level;
   playable->level_count = ags_ipatch_level_count;
   playable->sublevel_names = ags_ipatch_sublevel_names;
-  playable->level_select = NULL;
+  playable->level_select = ags_ipatch_level_select;
 
   playable->iter_start = ags_ipatch_iter_start;
   playable->iter_next = ags_ipatch_iter_next;
@@ -174,10 +184,12 @@ ags_ipatch_playable_interface_init(AgsPlayableInterface *playable)
 void
 ags_ipatch_init(AgsIpatch *ipatch)
 {
+  ipatch->flags = 0;
+
   ipatch->devout = NULL;
   ipatch->audio_signal= NULL;
 
-  ipatch->file = ipatch_file_new();
+  ipatch->file = NULL;
 
   ipatch->filename = NULL;
   ipatch->mode = AGS_IPATCH_READ;
@@ -185,8 +197,13 @@ ags_ipatch_init(AgsIpatch *ipatch)
   ipatch->handle = NULL;
   ipatch->error = NULL;
 
-  ipatch->container = NULL;
+  ipatch->base = NULL;
   ipatch->reader = NULL;
+
+  ipatch->samples = NULL;
+  ipatch->iter = NULL;
+
+  ipatch->nth_level = 0;
 }
 
 void
@@ -206,7 +223,7 @@ ags_ipatch_set_property(GObject *gobject,
 
       filename = (gchar *) g_value_get_pointer(value);
 
-      ipatch->filename = filename;
+      ags_playable_open(AGS_PLAYABLE(ipatch), filename);
     }
     break;
   case PROP_MODE:
@@ -285,22 +302,14 @@ ags_ipatch_open(AgsPlayable *playable, gchar *filename)
   IpatchFileIOFuncs *io_funcs;
   GError *error;
 
+#ifdef AGS_DEBUG
+  g_message("open %s with libinstpatch.\0", filename);
+#endif
+
   ipatch = AGS_IPATCH(playable);
 
-  /*
-  io_funcs = (IpatchFileIOFuncs *) g_new(IpatchFileIOFuncs, 1);
-  io_funcs->open = ipatch_file_default_open_method;
-  io_funcs->close = ipatch_file_default_close_method;
-  io_funcs->read = ipatch_file_default_read_method;
-  io_funcs->write = ipatch_file_default_write_method;
-  io_funcs->seek = ipatch_file_default_seek_method;
-  io_funcs->getfd = ipatch_file_default_getfd_method;
-  io_funcs->get_size = ipatch_file_default_get_size_method;
+  ipatch->filename = filename;
 
-  ipatch_file_set_iofuncs_static(ipatch->file,
-				 io_funcs);
-
-  */
   error = NULL;
   ipatch->handle = ipatch_file_identify_open(ipatch->filename,
 					     &error);
@@ -309,7 +318,41 @@ ags_ipatch_open(AgsPlayable *playable, gchar *filename)
     g_error("%s\0", error->message);
   }
 
-  //  ipatch->container = NULL;
+  if(IPATCH_IS_DLS_FILE(ipatch->handle->file)){
+    ipatch->flags |= AGS_IPATCH_DLS2;
+
+    //TODO:JK: implement me
+  }else if(g_str_has_suffix(filename, ".sf2\0")){
+    /*  */
+    ipatch->flags |= AGS_IPATCH_SF2;
+
+    /*  */
+    ipatch->reader = ags_ipatch_sf2_reader_new();
+    AGS_IPATCH_SF2_READER(ipatch->reader)->ipatch = ipatch;
+
+    AGS_IPATCH_SF2_READER(ipatch->reader)->reader = ipatch_sf2_reader_new(ipatch->handle);
+
+    error = NULL;
+    ipatch->base = ipatch_sf2_reader_load(AGS_IPATCH_SF2_READER(ipatch->reader)->reader,
+					  &error);
+
+    error = NULL;
+    AGS_IPATCH_SF2_READER(ipatch->reader)->sf2 = ipatch_convert_object_to_type(ipatch->handle->file,
+									       IPATCH_TYPE_SF2,
+									       &error);
+
+    if(error != NULL){
+      g_warning("%s\0", error->message);
+    }
+
+    /* load samples */
+    ipatch->samples = ipatch_container_get_children(IPATCH_CONTAINER(ipatch->base),
+						    IPATCH_TYPE_SF2_SAMPLE);
+  }else if(IPATCH_IS_GIG_FILE(ipatch->handle->file)){
+    ipatch->flags |= AGS_IPATCH_GIG;
+
+    //TODO:JK: implement me
+  }
 
   if(error == NULL){
     return(TRUE);
@@ -319,9 +362,29 @@ ags_ipatch_open(AgsPlayable *playable, gchar *filename)
 }
 
 guint
+ags_ipatch_nth_level(AgsPlayable *playable)
+{
+  AgsIpatch *ipatch;
+
+  ipatch = AGS_IPATCH(playable);
+
+  return(ipatch->nth_level);
+}
+
+guint
 ags_ipatch_level_count(AgsPlayable *playable)
 {
-  /* empty */
+  AgsIpatch *ipatch;
+
+  ipatch = AGS_IPATCH(playable);
+
+  if((AGS_IPATCH_DLS2 & (ipatch->flags)) != 0){
+    return(4);
+  }else if((AGS_IPATCH_SF2 & (ipatch->flags)) != 0){
+    return(4);
+  }else if((AGS_IPATCH_GIG & (ipatch->flags)) != 0){
+    return(4);
+  }
 
   return(0);
 }
@@ -329,9 +392,271 @@ ags_ipatch_level_count(AgsPlayable *playable)
 gchar**
 ags_ipatch_sublevel_names(AgsPlayable *playable)
 {
-  /* empty */
+  AgsIpatch *ipatch;
+  AgsIpatchSF2Reader *ipatch_sf2_reader;
+  IpatchItem *ipatch_item;
+  IpatchList *ipatch_list;
+  GList *list;
+  gchar **names;
+  gchar *name;
+  guint sublevel;
+  guint i;
 
-  return(NULL);
+  ipatch = AGS_IPATCH(playable);
+  list = NULL;
+
+  names = (gchar **) malloc(1 * sizeof(gchar*));
+  names[0] = NULL;
+
+  if((AGS_IPATCH_SF2 & (ipatch->flags)) != 0){
+    ipatch_sf2_reader = AGS_IPATCH_SF2_READER(ipatch->reader);
+    
+    sublevel = ipatch->nth_level;
+
+    switch(sublevel){
+    case AGS_SF2_FILENAME:
+      {
+	names = realloc(names, 2 * sizeof(char*));
+
+	names[0] = ipatch_sf2_reader->ipatch->filename;
+	names[1] = NULL;
+
+	return(names);
+      }
+    case AGS_SF2_PHDR:
+      {
+	ipatch_list = ipatch_container_get_children(ipatch_sf2_reader->sf2,
+						    IPATCH_TYPE_SF2_PRESET);
+
+	if(ipatch_list != NULL){
+	  list = ipatch_list->items;
+	}else{
+	  return(names);
+	}
+      }
+      break;
+    case AGS_SF2_IHDR:
+      {
+	GList *tmp;
+
+	ipatch_list = ipatch_sf2_preset_get_zones(ipatch_sf2_reader->preset);
+	tmp = ipatch_list->items;
+
+	while(tmp != NULL){
+	  list = g_list_prepend(list, ipatch_sf2_zone_get_link_item(IPATCH_SF2_ZONE(tmp->data)));
+
+	  tmp = tmp->next;
+	}
+
+	if(list != NULL){
+	  list = g_list_reverse(list);
+	}else{
+	  return(names);
+	}
+      }
+      break;
+    case AGS_SF2_SHDR:
+      {
+	GList *tmp;
+
+	ipatch_list = ipatch_sf2_preset_get_zones(ipatch_sf2_reader->instrument);
+	tmp = ipatch_list->items;
+	
+	while(tmp != NULL){
+	  list = g_list_prepend(list, ipatch_sf2_zone_get_link_item(IPATCH_SF2_ZONE(tmp->data)));
+
+	  tmp = tmp->next;
+	}
+
+	if(list != NULL){
+	  list = g_list_reverse(list);
+	}else{
+	  return(names);
+	}
+      }
+      break;
+    };
+  }
+
+  for(i = 0; list != NULL; i++){
+    switch(sublevel){
+    case AGS_SF2_PHDR:
+      {
+	if(IPATCH_IS_SF2_PRESET(list->data)){
+	  names = (gchar **) realloc(names, (i + 2) * sizeof(char*));
+	  names[i] = ipatch_sf2_preset_get_name(IPATCH_SF2_PRESET(list->data));
+	}
+      }
+      break;
+    case AGS_SF2_IHDR:
+      {
+	if(IPATCH_IS_SF2_INST(list->data)){
+	  names = (gchar **) realloc(names, (i + 2) * sizeof(char*));
+	  names[i] = ipatch_sf2_inst_get_name(IPATCH_SF2_INST(list->data));
+	}
+      }
+      break;
+    case AGS_SF2_SHDR:
+      {
+	if(IPATCH_IS_SF2_SAMPLE(list->data)){
+	  names = (gchar **) realloc(names, (i + 2) * sizeof(char*));
+	  names[i] = ipatch_sf2_sample_get_name(IPATCH_SF2_SAMPLE(list->data));
+	}
+      }
+      break;
+    };
+    
+    list = list->next;
+  }
+  
+  if(i > 0){
+    names[i] = NULL;
+  }
+
+  return(names);
+}
+
+void
+ags_ipatch_level_select(AgsPlayable *playable,
+			guint nth_level, gchar *sublevel_name,
+			GError **error)
+{
+  AgsIpatch *ipatch;
+  AgsIpatchSF2Reader *ipatch_sf2_reader;
+  gboolean success;
+
+  GError *this_error;
+
+  ipatch = AGS_IPATCH(playable);
+
+  if((AGS_IPATCH_SF2 & (ipatch->flags)) != 0){
+    ipatch_sf2_reader = AGS_IPATCH_SF2_READER(ipatch->reader);
+
+    //TODO:JK: apply mods and gens
+
+    if(sublevel_name == NULL){
+      ipatch->nth_level = 0;
+      ipatch_sf2_reader->selected[0] = NULL;
+    }else{
+      IpatchList *ipatch_list;
+      IpatchItem *ipatch_item;
+      GList *list;
+
+      if(nth_level == 0 && !g_strcmp0(ipatch_sf2_reader->ipatch->filename, sublevel_name)){
+	ipatch->nth_level = 0;
+	ipatch_sf2_reader->selected[0] = sublevel_name;
+	return;
+      }
+
+      if(nth_level == 1){
+	ipatch->nth_level = 1;
+	ipatch_sf2_reader->selected[1] = sublevel_name;
+
+	/* preset */
+	ipatch_list = ipatch_container_get_children(ipatch_sf2_reader->sf2,
+						    IPATCH_TYPE_SF2_PRESET);
+	list = ipatch_list->items;
+	
+	while(list != NULL){
+	  if(!g_strcmp0(ipatch_sf2_preset_get_name(IPATCH_SF2_PRESET(list->data)), sublevel_name)){
+	    /* some extra code for bank and program */
+	    //	    ipatch_sf2_preset_get_midi_locale(IPATCH_SF2_PRESET(list->data),
+	    //				      &(ipatch_sf2_reader->bank),
+	    //				      &(ipatch_sf2_reader->program));
+
+	    //	    g_message("bank %d program %d\n\0", ipatch_sf2_reader->bank, ipatch_sf2_reader->program);
+
+	    this_error = NULL;
+	    ipatch_sf2_reader->preset = IPATCH_SF2_PRESET(list->data);
+
+	    break;
+	  }
+
+	  list = list->next;
+	}
+
+	ipatch->iter = list;
+      }else{
+	gboolean found_first;
+
+	found_first = FALSE;
+
+	if(nth_level == 2){
+	  GList *tmp;
+
+	  ipatch->nth_level = 2;
+	  ipatch_sf2_reader->selected[2] = sublevel_name;
+
+	  /* instrument */
+	  ipatch_list = ipatch_sf2_preset_get_zones(ipatch_sf2_reader->preset);
+	  list = NULL;
+	  tmp = ipatch_list->items;
+
+	  while(tmp != NULL){
+	    list = g_list_prepend(list, ipatch_sf2_zone_get_link_item(IPATCH_SF2_ZONE(tmp->data)));
+
+	    if(!g_strcmp0(IPATCH_SF2_INST(list->data)->name, sublevel_name)){
+	      ipatch_sf2_reader->instrument = IPATCH_SF2_INST(list->data);
+	    }
+
+	    tmp = tmp->next;
+	  }
+
+	  ipatch->iter = g_list_reverse(list);
+	}else if(ipatch->nth_level == 3){
+	  GList *tmp;
+
+	  ipatch->nth_level = 3;
+	  ipatch_sf2_reader->selected[3] = sublevel_name;
+
+	  /* sample */
+	  ipatch_list = ipatch_sf2_preset_get_zones(ipatch_sf2_reader->instrument);
+	  list = NULL;
+	  tmp = ipatch_list->items;
+	
+	  while(tmp != NULL){
+	    list = g_list_prepend(list, ipatch_sf2_zone_get_link_item(IPATCH_SF2_ZONE(tmp->data)));
+
+	    if(!strncmp(IPATCH_SF2_SAMPLE(list->data)->name, sublevel_name, 20)){
+	      ipatch_sf2_reader->sample = IPATCH_SF2_SAMPLE(list->data);
+	    }
+
+	    tmp = tmp->next;
+	  }
+
+	  ipatch->iter = g_list_reverse(list);
+	}else{
+	  g_set_error(error,
+		      AGS_PLAYABLE_ERROR,
+		      AGS_PLAYABLE_ERROR_NO_SUCH_LEVEL,
+		      "no level called %s in soundfont2 file: %s\0",
+		      sublevel_name, ipatch_sf2_reader->ipatch->filename);
+	}
+      }
+    }
+  }
+}
+
+void
+ags_ipatch_level_up(AgsPlayable *playable, guint levels, GError **error)
+{
+  AgsIpatch *ipatch;
+  guint i;
+
+  if(levels == 0)
+    return;
+
+  ipatch = AGS_IPATCH(playable);
+
+  if(ipatch->nth_level >= levels){
+    ipatch->nth_level -= levels;
+  }else{
+    g_set_error(error,
+		AGS_PLAYABLE_ERROR,
+		AGS_PLAYABLE_ERROR_NO_SUCH_LEVEL,
+		"Not able to go %u steps higher in soundfont2 file: %s\0",
+		levels, ipatch->filename);
+  }
 }
 
 void
@@ -341,7 +666,15 @@ ags_ipatch_iter_start(AgsPlayable *playable)
 
   ipatch = AGS_IPATCH(playable);
 
-  /* empty */
+  if(ipatch->nth_level == 3){
+    if((AGS_IPATCH_DLS2 & (ipatch->flags)) != 0){
+      //TODO:JK: implement me
+    }else if((AGS_IPATCH_SF2 & (ipatch->flags)) != 0){
+      //TODO:JK: implement me
+    }else if((AGS_IPATCH_GIG & (ipatch->flags)) != 0){
+      //TODO:JK: implement me
+    }
+  }
 }
 
 gboolean
@@ -351,7 +684,13 @@ ags_ipatch_iter_next(AgsPlayable *playable)
 
   ipatch = AGS_IPATCH(playable);
 
-  /* empty */
+  if(ipatch->iter != NULL){
+    ipatch->iter = ipatch->iter->next;
+
+    return(TRUE);
+  }else{
+    return(FALSE);
+  }
 }
 
 void
@@ -361,10 +700,45 @@ ags_ipatch_info(AgsPlayable *playable,
 		GError **error)
 {
   AgsIpatch *ipatch;
+  IpatchSample *sample;
 
   ipatch = AGS_IPATCH(playable);
 
-  /* empty */
+  if(ipatch->iter == NULL){
+    if(channels != NULL){
+      *channels = 0;
+    }
+
+    if(frames != NULL){
+      *frames = 0;
+    }
+  
+    if(loop_start != NULL){
+      *loop_start = 0;
+    }
+  
+    if(loop_end != NULL){
+      *loop_end = 0;
+    }
+
+    g_set_error(error,
+		AGS_PLAYABLE_ERROR,
+		AGS_PLAYABLE_ERROR_NO_SAMPLE,
+		"no sample selected for file: %s\0",
+		ipatch->filename);
+  }
+
+  sample = IPATCH_SAMPLE(ipatch->iter->data);
+  g_object_get(G_OBJECT(sample),
+	       "sample-size\0", frames,
+	       "loop-start\0", loop_start,
+	       "loop-end\0", loop_end,
+	       NULL);
+
+  //TODO:JK: verify me
+  if(channels != NULL){
+    *channels = AGS_IPATCH_DEFAULT_CHANNELS;
+  }
 }
 
 signed short*
@@ -372,12 +746,62 @@ ags_ipatch_read(AgsPlayable *playable, guint channel,
 		GError **error)
 {
   AgsIpatch *ipatch;
+  IpatchSample *sample;
   signed short *buffer, *source;
+  guint channels, frames;
+  guint loop_start, loop_end;
   guint i;
+  GError *this_error;
 
   ipatch = AGS_IPATCH(playable);
 
-  /* empty */
+  this_error = NULL;
+  ags_playable_info(playable,
+		    &channels, &frames,
+		    &loop_start, &loop_end,
+		    &this_error);
+
+  if(this_error != NULL){
+    g_error("%s\0", this_error->message);
+  }
+
+  buffer = (signed short *) malloc(channels * frames * sizeof(signed short));
+  
+  if(ipatch->nth_level == 3){
+    sample = IPATCH_SAMPLE(ipatch->iter->data);
+  }else{
+    sample = NULL;
+
+    if((AGS_IPATCH_DLS2 & (ipatch->flags)) != 0){
+      //TODO:JK: implement me
+    }else if((AGS_IPATCH_SF2 & (ipatch->flags)) != 0){
+      AgsIpatchSF2Reader *reader;
+
+      reader = AGS_IPATCH_SF2_READER(ipatch->reader);
+
+      this_error = NULL;
+      sample = ipatch_sf2_find_sample(reader->sf2,
+				      reader->selected[3],
+				      NULL);
+    }else if((AGS_IPATCH_GIG & (ipatch->flags)) != 0){
+      //TODO:JK: implement me
+    }
+  }
+
+  this_error = NULL;
+  ipatch_sample_read_transform(sample,
+			       0,
+			       frames,
+			       buffer,
+			       IPATCH_SAMPLE_16BIT | IPATCH_SAMPLE_MONO | IPATCH_SAMPLE_SIGNED,
+			       IPATCH_SAMPLE_UNITY_CHANNEL_MAP,
+			       &this_error);
+      
+  if(this_error != NULL){
+    g_error("%s\0", this_error->message);
+  }
+
+  return(buffer);
 }
 
 void
@@ -406,54 +830,21 @@ ags_ipatch_finalize(GObject *gobject)
  * Reads an AgsAudioSignal from current sample and iterates to the next sample. Prior,
  * you should have called #ags_playable_iter_start.
  */
-void
-ags_ipatch_read_audio_signal(AgsIpatch *ipatch)
+GList*
+ags_ipatch_read_audio_signal(AgsPlayable *playable,
+			     AgsDevout *devout,
+			     guint start_channel, guint channels)
 {
+  AgsIpatch *ipatch;
   GList *list;
 
-  ags_playable_iter_next(AGS_PLAYABLE(ipatch->reader));
+  ipatch = AGS_IPATCH(playable);
+
   list = ags_playable_read_audio_signal(AGS_PLAYABLE(ipatch->reader),
 					ipatch->devout,
 					0, 2);
 
   ipatch->audio_signal = list;
-}
-
-gboolean
-ags_iofuncs_open(IpatchFileHandle *handle, const char *mode, GError **err)
-{
-}
-
-void
-ags_iofuncs_close(IpatchFileHandle *handle)
-{
-}
-
-GIOStatus
-ags_iofuncs_read(IpatchFileHandle *handle, gpointer buf, guint size,
-		 guint *bytes_read, GError **err)
-{
-}
-
-GIOStatus
-ags_iofuncs_write(IpatchFileHandle *handle, gconstpointer buf, guint size,
-		  GError **err)
-{
-}
-
-GIOStatus
-ags_iofuncs_seek(IpatchFileHandle *handle, int offset, GSeekType type, GError **err)
-{
-}
-
-int
-ags_iofuncs_getfd(IpatchFileHandle *handle)
-{
-}
-
-int
-ags_iofuncs_get_size(IpatchFile *file, GError **err)
-{
 }
 
 AgsIpatch*

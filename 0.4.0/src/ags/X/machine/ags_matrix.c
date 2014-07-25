@@ -19,9 +19,20 @@
 #include <ags/X/machine/ags_matrix.h>
 #include <ags/X/machine/ags_matrix_callbacks.h>
 
+#include <ags/main.h>
+
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/util/ags_id_generator.h>
+
 #include <ags/object/ags_portlet.h>
+#include <ags/object/ags_plugin.h>
+
+#include <ags/file/ags_file.h>
+#include <ags/file/ags_file_stock.h>
+#include <ags/file/ags_file_id_ref.h>
+#include <ags/file/ags_file_lookup.h>
+#include <ags/file/ags_file_launch.h>
 
 #include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_channel.h>
@@ -58,17 +69,23 @@
 #define AGS_MATRIX_INPUT_LINE_MAPPED_KEY "AGS_MATRIX_INPUT_LINE_MAPPED_KEY"
 #define AGS_MATRIX_INPUT_LINE_MAPPED_DATA "AGS_MATRIX_INPUT_LINE_MAPPED_DATA"
 
-#define AGS_MATRIX_CELL_WIDTH   12
-#define AGS_MATRIX_CELL_HEIGHT  10
-
 void ags_matrix_class_init(AgsMatrixClass *matrix);
 void ags_matrix_connectable_interface_init(AgsConnectableInterface *connectable);
+void ags_matrix_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_matrix_init(AgsMatrix *matrix);
 void ags_matrix_finalize(GObject *gobject);
 void ags_matrix_connect(AgsConnectable *connectable);
 void ags_matrix_disconnect(AgsConnectable *connectable);
 void ags_matrix_show(GtkWidget *widget);
+void ags_matrix_show_all(GtkWidget *widget);
 void ags_matrix_add_default_recalls(AgsMachine *machine);
+gchar* ags_matrix_get_name(AgsPlugin *plugin);
+void ags_matrix_set_name(AgsPlugin *plugin, gchar *name);
+gchar* ags_matrix_get_xml_type(AgsPlugin *plugin);
+void ags_matrix_set_xml_type(AgsPlugin *plugin, gchar *xml_type);
+void ags_matrix_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
+void ags_matrix_launch_task(AgsFileLaunch *file_launch, AgsMatrix *matrix);
+xmlNode* ags_matrix_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 
 void ags_matrix_set_audio_channels(AgsAudio *audio,
 				   guint audio_channels, guint audio_channels_old,
@@ -110,6 +127,12 @@ ags_matrix_get_type(void)
       NULL, /* interface_data */
     };
     
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_matrix_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
     ags_type_matrix = g_type_register_static(AGS_TYPE_MACHINE,
 					    "AgsMatrix\0", &ags_matrix_info,
 					    0);
@@ -117,6 +140,10 @@ ags_matrix_get_type(void)
     g_type_add_interface_static(ags_type_matrix,
 				AGS_TYPE_CONNECTABLE,
 				&ags_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_matrix,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_matrix);
@@ -139,7 +166,8 @@ ags_matrix_class_init(AgsMatrixClass *matrix)
   /* GtkWidget */
   widget = (GtkWidgetClass *) matrix;
 
-  //  widget->show = ags_matrix_show;
+  widget->show = ags_matrix_show;
+  widget->show_all = ags_matrix_show_all;
 
   /* AgsMachine */
   machine = (AgsMachineClass *) matrix;
@@ -158,6 +186,17 @@ ags_matrix_connectable_interface_init(AgsConnectableInterface *connectable)
 
   connectable->connect = ags_matrix_connect;
   connectable->disconnect = ags_matrix_disconnect;
+}
+
+void
+ags_matrix_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  plugin->get_name = ags_matrix_get_name;
+  plugin->set_name = ags_matrix_set_name;
+  plugin->get_xml_type = ags_matrix_get_xml_type;
+  plugin->set_xml_type = ags_matrix_set_xml_type;
+  plugin->read = ags_matrix_read;
+  plugin->write = ags_matrix_write;
 }
 
 void
@@ -191,6 +230,9 @@ ags_matrix_init(AgsMatrix *matrix)
   /*  */
   AGS_MACHINE(matrix)->flags |= AGS_MACHINE_IS_SEQUENCER;
   matrix->flags = 0;
+
+  matrix->name = NULL;
+  matrix->xml_type = "ags-matrix\0";
 
   matrix->mapped_input_pad = 0;
   matrix->mapped_output_pad = 0;
@@ -237,7 +279,7 @@ ags_matrix_init(AgsMatrix *matrix)
 		   0, 0);
 
   matrix->drawing_area = (GtkDrawingArea *) gtk_drawing_area_new();
-  gtk_widget_set_size_request((GtkWidget *) matrix->drawing_area, 32 * AGS_MATRIX_CELL_WIDTH +1, 8 * AGS_MATRIX_CELL_HEIGHT +1);
+  gtk_widget_set_size_request((GtkWidget *) matrix->drawing_area, 32 * AGS_MATRIX_CELL_WIDTH +1, AGS_MATRIX_OCTAVE * AGS_MATRIX_CELL_HEIGHT +1);
   gtk_widget_set_style((GtkWidget *) matrix->drawing_area, matrix_style);
   gtk_table_attach(table, (GtkWidget *) matrix->drawing_area,
 		   0, 1, 0, 1,
@@ -250,7 +292,7 @@ ags_matrix_init(AgsMatrix *matrix)
                          | GDK_POINTER_MOTION_MASK
                          | GDK_POINTER_MOTION_HINT_MASK);
 
-  matrix->adjustment = (GtkAdjustment *) gtk_adjustment_new(0.0, 0.0, 77.0, 1.0, 1.0, 8.0);
+  matrix->adjustment = (GtkAdjustment *) gtk_adjustment_new(0.0, 0.0, 77.0, 1.0, 1.0, (gdouble) AGS_MATRIX_OCTAVE);
 
   vscrollbar = (GtkVScrollbar *) gtk_vscrollbar_new(matrix->adjustment);
   gtk_widget_set_style((GtkWidget *) vscrollbar, matrix_style);
@@ -291,11 +333,10 @@ ags_matrix_init(AgsMatrix *matrix)
   matrix->length_spin->adjustment->value = 16.0;
   gtk_box_pack_start((GtkBox *) hbox, (GtkWidget *) matrix->length_spin, FALSE, FALSE, 0);
 
-  matrix->tact = (GtkOptionMenu *) gtk_option_menu_new();
+  matrix->tact = ags_tact_combo_box_new();
   gtk_box_pack_start((GtkBox *) vbox, (GtkWidget *) matrix->tact, FALSE, FALSE, 0);
 
-  gtk_option_menu_set_menu(matrix->tact, (GtkWidget *) ags_tact_menu_new());
-  gtk_option_menu_set_history(matrix->tact, 4);
+  gtk_combo_box_set_active(matrix->tact, 4);
 
   matrix->loop_button = (GtkCheckButton *) gtk_check_button_new_with_label(g_strdup("loop\0"));
   gtk_box_pack_start((GtkBox *) vbox, (GtkWidget *) matrix->loop_button, FALSE, FALSE, 0);
@@ -466,6 +507,17 @@ ags_matrix_disconnect(AgsConnectable *connectable)
 void
 ags_matrix_show(GtkWidget *widget)
 {
+  GTK_WIDGET_CLASS(ags_matrix_parent_class)->show(widget);
+
+  ags_matrix_draw_matrix(AGS_MATRIX(widget));
+}
+
+void
+ags_matrix_show_all(GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS(ags_matrix_parent_class)->show_all(widget);
+
+  ags_matrix_draw_matrix(AGS_MATRIX(widget));
 }
 
 void
@@ -490,12 +542,23 @@ ags_matrix_set_pads(AgsAudio *audio, GType type,
 
   GValue value = {0,};
 
-  if(type == AGS_TYPE_INPUT && pads < 8){
-    printf("AgsMatrix minimum input pad count 8\n\0");
-    pads = 8;
+  if(pads == pads_old){
+    return;
   }
-
+  
   matrix = (AgsMatrix *) audio->machine;
+
+  if(type == AGS_TYPE_INPUT){
+    if(pads < AGS_MATRIX_OCTAVE){
+      gtk_widget_set_size_request((GtkWidget *) matrix->drawing_area,
+				  32 * AGS_MATRIX_CELL_WIDTH +1,
+				  pads * AGS_MATRIX_CELL_HEIGHT +1);
+    }else if(pads_old < AGS_MATRIX_OCTAVE){
+      gtk_widget_set_size_request((GtkWidget *) matrix->drawing_area,
+				  32 * AGS_MATRIX_CELL_WIDTH +1,
+				  AGS_MATRIX_OCTAVE * AGS_MATRIX_CELL_HEIGHT +1);
+    }
+  }
 
   if(pads_old == pads)
     return;
@@ -546,13 +609,16 @@ ags_matrix_set_pads(AgsAudio *audio, GType type,
 				 AGS_RECALL_FACTORY_REMAP |
 				 AGS_RECALL_FACTORY_RECALL),
 				0);
+
       /* create pattern */
       source = ags_channel_nth(audio->input, pads_old);
 
       while(source != NULL){
-	source->pattern = g_list_alloc();
-	source->pattern->data = (gpointer) ags_pattern_new();
-	ags_pattern_set_dim((AgsPattern *) source->pattern->data, 1, 9, 32);
+	if(source->pattern == NULL){
+	  source->pattern = g_list_alloc();
+	  source->pattern->data = (gpointer) ags_pattern_new();
+	  ags_pattern_set_dim((AgsPattern *) source->pattern->data, 1, 9, 32);
+	}
 	
 	source = source->next;
       }
@@ -577,7 +643,7 @@ ags_matrix_set_pads(AgsAudio *audio, GType type,
       }
 
       /* depending on destination */
-      ags_matrix_input_map_recall(matrix, pads_old);
+      ags_matrix_input_map_recall(matrix, pads);
     }else{
       matrix->mapped_input_pad = audio->input_pads;
     }
@@ -654,7 +720,7 @@ ags_matrix_set_pads(AgsAudio *audio, GType type,
       }
 
       /* depending on destination */
-      ags_matrix_output_map_recall(matrix, pads_old);
+      ags_matrix_output_map_recall(matrix, pads);
     }else{
       matrix->mapped_output_pad = audio->output_pads;
     }
@@ -675,12 +741,10 @@ ags_matrix_input_map_recall(AgsMatrix *matrix, guint input_pad_start)
 
   if(matrix->mapped_input_pad > input_pad_start){
     return;
-  }else{
-    matrix->mapped_input_pad = audio->input_pads;
   }
 
   source = ags_channel_nth(audio->input,
-			   input_pad_start * audio->audio_channels);
+			   matrix->mapped_input_pad * audio->audio_channels);
 
   current = source;
 
@@ -736,13 +800,14 @@ ags_matrix_input_map_recall(AgsMatrix *matrix, guint input_pad_start)
 			      current->audio_channel, current->audio_channel + 1, 
 			      current->pad, current->pad + 1,
 			      (AGS_RECALL_FACTORY_INPUT |
-			       AGS_RECALL_FACTORY_PLAY |
 			       AGS_RECALL_FACTORY_RECALL | 
 			       AGS_RECALL_FACTORY_ADD),
 			      0);
 
     current = current->next_pad;
   }
+
+  matrix->mapped_input_pad = input_pad_start;
 }
 
 void
@@ -762,12 +827,10 @@ ags_matrix_output_map_recall(AgsMatrix *matrix, guint output_pad_start)
 
   if(matrix->mapped_output_pad > output_pad_start){
     return;
-  }else{
-    matrix->mapped_output_pad = audio->output_pads;
   }
-  
+
   source = ags_channel_nth(audio->output,
-			   output_pad_start * audio->audio_channels);
+			   matrix->mapped_output_pad * audio->audio_channels);
 
   /* get some recalls */
   list = ags_recall_find_type(audio->play, AGS_TYPE_DELAY_AUDIO);
@@ -791,7 +854,7 @@ ags_matrix_output_map_recall(AgsMatrix *matrix, guint output_pad_start)
 			    NULL, NULL,
 			    "ags-loop\0",
 			    source->audio_channel, source->audio_channel + 1,
-			    output_pad_start, output_pad_start + 1,
+			    matrix->mapped_output_pad, output_pad_start,
 			    (AGS_RECALL_FACTORY_OUTPUT |
 			     AGS_RECALL_FACTORY_PLAY | 
 			     AGS_RECALL_FACTORY_ADD),
@@ -828,18 +891,21 @@ ags_matrix_output_map_recall(AgsMatrix *matrix, guint output_pad_start)
 			    NULL, NULL,
 			    "ags-stream\0",
 			    source->audio_channel, source->audio_channel + 1,
-			    output_pad_start, audio->output_pads,
+			    matrix->mapped_output_pad, output_pad_start,
 			    (AGS_RECALL_FACTORY_OUTPUT |
 			     AGS_RECALL_FACTORY_PLAY |
 			     AGS_RECALL_FACTORY_RECALL | 
 			     AGS_RECALL_FACTORY_ADD),
 			    0);
+
+  matrix->mapped_output_pad = output_pad_start;
 }
 
 void
 ags_matrix_draw_gutter(AgsMatrix *matrix)
 {
   AgsChannel *channel;
+  guint gutter;
   int i, j;
 
   gdk_draw_rectangle (GTK_WIDGET (matrix->drawing_area)->window,
@@ -850,7 +916,13 @@ ags_matrix_draw_gutter(AgsMatrix *matrix)
 
   channel = ags_channel_nth(matrix->machine.audio->input, (guint) matrix->adjustment->value);
 
-  for (i = 0; i < 8; i++){
+  if(AGS_MACHINE(matrix)->audio->input_pads > AGS_MATRIX_OCTAVE){
+    gutter = AGS_MATRIX_OCTAVE;
+  }else{
+    gutter = AGS_MACHINE(matrix)->audio->input_pads;
+  }
+
+  for (i = 0; i < gutter; i++){
     for (j = 0; j < 32; j++){
       gdk_draw_rectangle (GTK_WIDGET (matrix->drawing_area)->window,
                           GTK_WIDGET (matrix->drawing_area)->style->fg_gc[0],
@@ -869,11 +941,22 @@ void
 ags_matrix_draw_matrix(AgsMatrix *matrix)
 {
   AgsChannel *channel;
+  guint gutter;
   int i, j;
 
   channel = ags_channel_nth(matrix->machine.audio->input, (guint) matrix->adjustment->value);
 
-  for (i = 0; i < 8; i++){
+  if(channel == NULL){
+    return;
+  }
+
+  if(AGS_MACHINE(matrix)->audio->input_pads > AGS_MATRIX_OCTAVE){
+    gutter = AGS_MATRIX_OCTAVE;
+  }else{
+    gutter = AGS_MACHINE(matrix)->audio->input_pads;
+  }
+
+  for (i = 0; i < gutter; i++){
     for (j = 0; j < 32; j++)
       ags_matrix_redraw_gutter_point (matrix, channel, j, i);
 
@@ -899,7 +982,7 @@ ags_matrix_highlight_gutter_point(AgsMatrix *matrix, guint j, guint i)
   gdk_draw_rectangle (GTK_WIDGET (matrix->drawing_area)->window,
 		      GTK_WIDGET (matrix->drawing_area)->style->fg_gc[0],
 		      TRUE,
-		      j * 12 +1, i * 10 +1,
+		      j * AGS_MATRIX_CELL_WIDTH + 1, i * AGS_MATRIX_CELL_HEIGHT + 1,
 		      11, 9);
 }
 
@@ -909,8 +992,176 @@ ags_matrix_unpaint_gutter_point(AgsMatrix *matrix, guint j, guint i)
   gdk_draw_rectangle (GTK_WIDGET (matrix->drawing_area)->window,
 		      GTK_WIDGET (matrix->drawing_area)->style->bg_gc[0],
 		      TRUE,
-		      j * 12 +1, i * 10 +1,
+		      j * AGS_MATRIX_CELL_WIDTH + 1, i * AGS_MATRIX_CELL_HEIGHT +1,
 		      11, 9);
+}
+
+gchar*
+ags_matrix_get_name(AgsPlugin *plugin)
+{
+  return(AGS_MATRIX(plugin)->name);
+}
+
+void
+ags_matrix_set_name(AgsPlugin *plugin, gchar *name)
+{
+  AGS_MATRIX(plugin)->name = name;
+}
+
+gchar*
+ags_matrix_get_xml_type(AgsPlugin *plugin)
+{
+  return(AGS_MATRIX(plugin)->xml_type);
+}
+
+void
+ags_matrix_set_xml_type(AgsPlugin *plugin, gchar *xml_type)
+{
+  AGS_MATRIX(plugin)->xml_type = xml_type;
+}
+
+void
+ags_matrix_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin)
+{
+  AgsMatrix *gobject;
+  AgsFileLaunch *file_launch;
+  GList *list;
+  guint64 index;
+
+  gobject = AGS_MATRIX(plugin);
+
+  ags_file_add_id_ref(file,
+		      g_object_new(AGS_TYPE_FILE_ID_REF,
+				   "main\0", file->ags_main,
+				   "file\0", file,
+				   "node\0", node,
+				   "xpath\0", g_strdup_printf("xpath=//*[@id='%s']\0", xmlGetProp(node, AGS_FILE_ID_PROP)),
+				   "reference\0", gobject,
+				   NULL));
+
+  index = g_ascii_strtoull(xmlGetProp(node,
+				      "bank-index-0\0"),
+			   NULL,
+			   10);
+
+  if(index != 0){
+    gtk_toggle_button_set_active(gobject->index[0],
+				 FALSE);
+    gtk_toggle_button_set_active(gobject->index[index],
+				 TRUE);
+    gobject->selected = gobject->index[index];
+  }
+
+  file_launch = g_object_new(AGS_TYPE_FILE_LAUNCH,
+			     "node\0", node,
+			     NULL);
+  g_signal_connect(G_OBJECT(file_launch), "start\0",
+		   G_CALLBACK(ags_matrix_launch_task), gobject);
+}
+
+void
+ags_matrix_launch_task(AgsFileLaunch *file_launch, AgsMatrix *matrix)
+{
+  GtkTreeModel *model;
+  GtkTreeIter iter;
+  GList *list;
+  gchar *tact, *tmp_tact;
+  gdouble length;
+  gint history, i;
+  gboolean valid;
+
+  /* tact */
+  tact = (gchar *) xmlGetProp(file_launch->node,
+			      "tact\0");
+
+  model = gtk_combo_box_get_model(matrix->tact);
+  valid = gtk_tree_model_get_iter_first(model,
+					&iter);
+  history = -1;
+
+  for(; valid; history++){
+    gtk_tree_model_get(model, &iter,
+		       0, &tmp_tact,
+		       -1);
+
+    if(!g_strcmp0(tact,
+		  tmp_tact)){
+      break;
+    }
+
+    valid = gtk_tree_model_iter_next(model, &iter);
+  }
+
+  gtk_combo_box_set_active_iter(matrix->tact,
+				&iter);
+
+  /* length */
+  length = (gdouble) g_ascii_strtod(xmlGetProp(file_launch->node,
+					       "length\0"),
+				    NULL);
+  gtk_spin_button_set_value(matrix->length_spin,
+			    length);
+
+  /* loop */
+  if(!g_strcmp0(xmlGetProp(file_launch->node,
+			   "loop\0"),
+		AGS_FILE_TRUE)){
+    gtk_toggle_button_set_active(matrix->loop_button,
+				 TRUE);
+  }
+}
+
+xmlNode*
+ags_matrix_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin)
+{
+  AgsMatrix *matrix;
+  xmlNode *node;
+  GList *list;
+  gchar *id;
+  guint i;
+  gint history;
+
+  matrix = AGS_MATRIX(plugin);
+
+  id = ags_id_generator_create_uuid();
+  
+  node = xmlNewNode(NULL,
+		    "ags-matrix\0");
+  xmlNewProp(node,
+	     AGS_FILE_ID_PROP,
+	     id);
+
+  ags_file_add_id_ref(file,
+		      g_object_new(AGS_TYPE_FILE_ID_REF,
+				   "main\0", file->ags_main,
+				   "file\0", file,
+				   "node\0", node,
+				   "xpath\0", g_strdup_printf("xpath=//*[@id='%s']\0", id),
+				   "reference\0", matrix,
+				   NULL));
+
+  history = gtk_combo_box_get_active(matrix->tact);
+
+  xmlNewProp(node,
+	     "tact\0",
+	     g_strdup_printf("%s\0", gtk_combo_box_get_active_text(matrix->tact)));
+
+  xmlNewProp(node,
+	     "length\0",
+	     g_strdup_printf("%d\0", (gint) gtk_spin_button_get_value(matrix->length_spin)));
+
+  for(i = 0; matrix->selected != matrix->index[i]; i++);
+
+  xmlNewProp(node,
+	     "bank-index-0\0",
+	     g_strdup_printf("%d\0", i));
+
+  xmlNewProp(node,
+	     "loop\0",
+	     g_strdup_printf("%s\0", (gtk_toggle_button_get_active(matrix->loop_button) ? AGS_FILE_TRUE: AGS_FILE_FALSE)));
+
+  xmlAddChild(parent,
+	      node);  
 }
 
 AgsMatrix*

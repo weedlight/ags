@@ -217,6 +217,41 @@ ags_playable_read(AgsPlayable *playable,
 }
 
 void
+ags_playable_write(AgsPlayable *playable,
+		   signed short *buffer, guint buffer_length)
+{
+  AgsPlayableInterface *playable_interface;
+
+  g_return_if_fail(AGS_IS_PLAYABLE(playable));
+  playable_interface = AGS_PLAYABLE_GET_INTERFACE(playable);
+  g_return_if_fail(playable_interface->write);
+  playable_interface->write(playable, buffer, buffer_length);
+}
+
+void
+ags_playable_flush(AgsPlayable *playable)
+{
+  AgsPlayableInterface *playable_interface;
+
+  g_return_if_fail(AGS_IS_PLAYABLE(playable));
+  playable_interface = AGS_PLAYABLE_GET_INTERFACE(playable);
+  g_return_if_fail(playable_interface->flush);
+  playable_interface->flush(playable);
+}
+
+void
+ags_playable_seek(AgsPlayable *playable,
+		  guint frames, gint whence)
+{
+  AgsPlayableInterface *playable_interface;
+
+  g_return_if_fail(AGS_IS_PLAYABLE(playable));
+  playable_interface = AGS_PLAYABLE_GET_INTERFACE(playable);
+  g_return_if_fail(playable_interface->write);
+  playable_interface->seek(playable, frames, whence);
+}
+
+void
 ags_playable_close(AgsPlayable *playable)
 {
   AgsPlayableInterface *playable_interface;
@@ -250,7 +285,9 @@ ags_playable_read_audio_signal(AgsPlayable *playable,
 
   length = (guint) ceil((double)(frames) / (double)(devout->buffer_size));
 
+#ifdef AGS_DEBUG
   g_message("ags_playable_read_audio_signal:\n  frames = %u\n  devout->buffer_size = %u\n  length = %u\n\0", frames, devout->buffer_size, length);
+#endif
 
   list = NULL;
   i = start_channel;
@@ -260,6 +297,9 @@ ags_playable_read_audio_signal(AgsPlayable *playable,
     audio_signal = ags_audio_signal_new((GObject *) devout,
 					NULL,
 					NULL);
+    audio_signal->samplerate = devout->frequency;
+    audio_signal->buffer_size = devout->buffer_size;
+
     list = g_list_prepend(list, audio_signal);
 
     ags_connectable_connect(AGS_CONNECTABLE(audio_signal));

@@ -21,6 +21,8 @@
 
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/object/ags_plugin.h>
+
 #include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_channel.h>
 #include <ags/audio/ags_input.h>
@@ -55,6 +57,7 @@
 
 void ags_drum_input_line_class_init(AgsDrumInputLineClass *drum_input_line);
 void ags_drum_input_line_connectable_interface_init(AgsConnectableInterface *connectable);
+void ags_drum_input_line_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_drum_input_line_init(AgsDrumInputLine *drum_input_line);
 void ags_drum_input_line_destroy(GtkObject *object);
 void ags_drum_input_line_connect(AgsConnectable *connectable);
@@ -90,6 +93,12 @@ ags_drum_input_line_get_type()
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_drum_input_line_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
     ags_type_drum_input_line = g_type_register_static(AGS_TYPE_LINE,
 						      "AgsDrumInputLine\0", &ags_drum_input_line_info,
 						      0);
@@ -97,6 +106,10 @@ ags_drum_input_line_get_type()
     g_type_add_interface_static(ags_type_drum_input_line,
 				AGS_TYPE_CONNECTABLE,
 				&ags_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_drum_input_line,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_drum_input_line);
@@ -127,28 +140,51 @@ ags_drum_input_line_connectable_interface_init(AgsConnectableInterface *connecta
 }
 
 void
+ags_drum_input_line_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  /* empty */
+}
+
+void
 ags_drum_input_line_init(AgsDrumInputLine *drum_input_line)
 {
   AgsLineMember *line_member;
+  GtkWidget *widget;
 
   g_signal_connect_after((GObject *) drum_input_line, "parent_set\0",
 			 G_CALLBACK(ags_drum_input_line_parent_set_callback), (gpointer) drum_input_line);
 
-  line_member = ags_line_member_new();
-  line_member->flags |= AGS_LINE_MEMBER_DEFAULT_TEMPLATE;
-  line_member->widget_type = GTK_TYPE_VSCALE;
+  line_member = (AgsLineMember *) g_object_new(AGS_TYPE_LINE_MEMBER,
+					       "widget-type\0", GTK_TYPE_VSCALE,
+					       "plugin-name\0", "ags-volume\0",
+					       "specifier\0", "./volume[0]\0",
+					       "control-port\0", "1/1\0",
+					       NULL);
   ags_expander_add(AGS_LINE(drum_input_line)->expander,
 		   GTK_WIDGET(line_member),
 		   0, 0,
 		   1, 1);
 
-  drum_input_line->volume = (GtkVScale *) gtk_vscale_new_with_range(0.0, 2.00, 0.025);
-  gtk_range_set_value((GtkRange *) drum_input_line->volume, 1.0);
-  gtk_range_set_inverted((GtkRange *) drum_input_line->volume, TRUE);
-  gtk_scale_set_digits((GtkScale *) drum_input_line->volume, 3);
-  gtk_widget_set_size_request((GtkWidget *) drum_input_line->volume, -1, 100);
-  gtk_container_add(GTK_CONTAINER(line_member),
-		    GTK_WIDGET(drum_input_line->volume));
+  widget = gtk_bin_get_child(GTK_BIN(line_member));
+
+  gtk_scale_set_digits(GTK_SCALE(widget),
+		       3);
+
+  gtk_range_set_range(GTK_RANGE(widget),
+		      0.0, 2.00);
+  gtk_range_set_increments(GTK_RANGE(widget),
+			   0.025, 0.1);
+  gtk_range_set_value(GTK_RANGE(widget),
+		      1.0);
+  gtk_range_set_inverted(GTK_RANGE(widget),
+			 TRUE);
+
+  gtk_widget_set_size_request(widget,
+			      -1, 100);
+
+  g_object_set(G_OBJECT(line_member),
+	       "port-data\0", (gpointer) &(GTK_RANGE(widget)->adjustment->value),
+	       NULL);
 }
 
 void
@@ -161,6 +197,7 @@ ags_drum_input_line_connect(AgsConnectable *connectable)
 {
   AgsDrum *drum;
   AgsDrumInputLine *drum_input_line;
+  GList *line_member;
 
   drum_input_line = AGS_DRUM_INPUT_LINE(connectable);
 
@@ -172,15 +209,13 @@ ags_drum_input_line_connect(AgsConnectable *connectable)
   ags_drum_input_line_parent_connectable_interface->connect(connectable);
 
   /* AgsDrumInputLine */
-  drum = AGS_DRUM(gtk_widget_get_ancestor((GtkWidget *) drum_input_line->line.pad, AGS_TYPE_DRUM));
+  drum = AGS_DRUM(gtk_widget_get_ancestor((GtkWidget *) AGS_LINE(drum_input_line)->pad, AGS_TYPE_DRUM));
 
   /* AgsAudio */
-  g_signal_connect_after(G_OBJECT(drum->machine.audio), "set_pads\0",
+  g_signal_connect_after(G_OBJECT(AGS_MACHINE(drum)->audio), "set_pads\0",
 			 G_CALLBACK(ags_drum_input_line_audio_set_pads_callback), drum_input_line);
 
   /* AgsDrumInputLine */
-  g_signal_connect(G_OBJECT(drum_input_line->volume), "value-changed\0",
-		   G_CALLBACK(ags_line_volume_callback), AGS_LINE(drum_input_line));
 }
 
 void
@@ -200,20 +235,25 @@ ags_drum_input_line_set_channel(AgsLine *line, AgsChannel *channel)
 
   drum_input_line = AGS_DRUM_INPUT_LINE(line);
 
+#ifdef AGS_DEBUG
   g_message("ags_drum_input_line_set_channel - channel: %u\0",
 	    channel->line);
+#endif
 
   if(line->channel != NULL){
     line->flags &= (~AGS_LINE_MAPPED_RECALL);
   }
 
   if(channel != NULL){
-    channel->pattern = g_list_alloc();
-    channel->pattern->data = (gpointer) ags_pattern_new();
-    ags_pattern_set_dim((AgsPattern *) channel->pattern->data, 4, 12, 64);
+    if(channel->pattern == NULL){
+      channel->pattern = g_list_alloc();
+      channel->pattern->data = (gpointer) ags_pattern_new();
+      ags_pattern_set_dim((AgsPattern *) channel->pattern->data, 4, 12, 64);
+    }
 
     if((AGS_LINE_PREMAPPED_RECALL & (line->flags)) == 0){
       ags_drum_input_line_map_recall(drum_input_line, 0);
+      ags_line_find_port(line);
     }else{
       //TODO:JK: make it advanced
       /* reset edit button */

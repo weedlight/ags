@@ -162,7 +162,7 @@ ags_devout_class_init(AgsDevoutClass *devout)
   param_spec = g_param_spec_string("device\0",
 				   "the device identifier\0",
 				   "The device to perform output to\0",
-				   "default\0",
+				   "hw:0\0",
 				   G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
 				  PROP_DEVICE,
@@ -300,11 +300,10 @@ ags_devout_init(AgsDevout *devout)
 {
   guint default_tact_frames;
   guint default_tic_frames;
-  guint start;
   guint i;
   
   /* flags */
-  devout->flags = AGS_DEVOUT_ALSA;
+  devout->flags = (AGS_DEVOUT_ALSA);
 
   /* quality */
   devout->dsp_channels = 2;
@@ -328,31 +327,29 @@ ags_devout_init(AgsDevout *devout)
   devout->bpm = AGS_DEVOUT_DEFAULT_BPM;
 
   /* delay and attack */
-  devout->delay = (guint *) malloc((int) 2.0 * ceil(AGS_NOTATION_TICS_PER_BEAT) *
+  devout->delay = (guint *) malloc((int) ceil(2.0 * AGS_NOTATION_TICS_PER_BEAT) *
+				   sizeof(gdouble));
+
+  devout->attack = (guint *) malloc((int) ceil(2.0 * AGS_NOTATION_TICS_PER_BEAT) *
 				   sizeof(guint));
 
-  devout->attack = (guint *) malloc((int) 2.0 * ceil(AGS_NOTATION_TICS_PER_BEAT) *
-				   sizeof(guint));
+  default_tact_frames = (guint) (AGS_DEVOUT_DEFAULT_DELAY * AGS_DEVOUT_DEFAULT_BUFFER_SIZE);
+  default_tic_frames = (guint) (default_tact_frames * AGS_NOTATION_MINIMUM_NOTE_LENGTH);
 
-  default_tact_frames = AGS_DEVOUT_DEFAULT_DELAY * AGS_DEVOUT_DEFAULT_BUFFER_SIZE;
-  default_tic_frames = default_tact_frames * AGS_NOTATION_MINIMUM_NOTE_LENGTH;
+  memset(devout->delay, 0, (int) (ceil(2.0 * AGS_NOTATION_TICS_PER_BEAT) * sizeof(guint)));
+  memset(devout->delay, 0, (int) (ceil(2.0 * AGS_NOTATION_TICS_PER_BEAT) * sizeof(guint)));
 
-  start = default_tic_frames % AGS_DEVOUT_DEFAULT_BUFFER_SIZE;
-
-  //TODO:JK: more work
-  //  memset(devout->delay, AGS_DEVOUT_DEFAULT_DELAY, 2 * (int) ceil(AGS_NOTATION_TICS_PER_BEAT));
-  memset(devout->delay, 0, 2 * (int) ceil(AGS_NOTATION_TICS_PER_BEAT) * sizeof(guint));
-
-  for(i = 0; i < (int) ceil(AGS_NOTATION_TICS_PER_BEAT); i++){
-    //TODO:JK: more work
-    //    devout->attack[i] = (start + i * default_tic_frames) % AGS_DEVOUT_DEFAULT_BUFFER_SIZE;
-    devout->attack[i] = 0;
+  for(i = 0; i < (int) ceil(2.0 * AGS_NOTATION_TICS_PER_BEAT); i++){
+    devout->attack[i] = (i * default_tic_frames) % AGS_DEVOUT_DEFAULT_BUFFER_SIZE;
   }
 
-  memcpy(&(devout->attack[i]), devout->attack, (int) ceil(AGS_NOTATION_TICS_PER_BEAT) * sizeof(guint));
+  for(i = 0; i < (int) ceil(2.0 * AGS_NOTATION_TICS_PER_BEAT); i++){
+    //    devout->delay[i] = AGS_DEVOUT_DEFAULT_BUFFER_SIZE / (default_tic_frames) / (AGS_DEVOUT_DEFAULT_SAMPLERATE / AGS_NOTATION_DEFAULT_JIFFIE);
+  }
 
-  /* delay counter */
+  /*  */
   devout->delay_counter = 0;
+  devout->tic_counter = 0;
 
   /* parent */
   devout->ags_main = NULL;
@@ -412,12 +409,38 @@ ags_devout_set_property(GObject *gobject,
     break;
   case PROP_DSP_CHANNELS:
     {
-	//TODO:JK: implement me
+      guint dsp_channels;
+
+      dsp_channels = g_value_get_uint(value);
+
+      if(dsp_channels == devout->dsp_channels){
+	return;
+      }
+
+      devout->dsp_channels = dsp_channels;
     }
     break;
   case PROP_PCM_CHANNELS:
     {
-	//TODO:JK: implement me
+      guint pcm_channels;
+
+      pcm_channels = g_value_get_uint(value);
+
+      if(pcm_channels == devout->pcm_channels){
+	return;
+      }
+
+      devout->pcm_channels = pcm_channels;
+
+      free(devout->buffer[0]);
+      free(devout->buffer[1]);
+      free(devout->buffer[2]);
+      free(devout->buffer[3]);
+
+      devout->buffer[0] = (signed short *) malloc((pcm_channels * devout->buffer_size) * sizeof(signed short));
+      devout->buffer[1] = (signed short *) malloc((pcm_channels * devout->buffer_size) * sizeof(signed short));
+      devout->buffer[2] = (signed short *) malloc((pcm_channels * devout->buffer_size) * sizeof(signed short));
+      devout->buffer[3] = (signed short *) malloc((pcm_channels * devout->buffer_size) * sizeof(signed short));
     }
     break;
   case PROP_BITS:
@@ -427,12 +450,38 @@ ags_devout_set_property(GObject *gobject,
     break;
   case PROP_BUFFER_SIZE:
     {
-	//TODO:JK: implement me
+      guint buffer_size;
+
+      buffer_size = g_value_get_uint(value);
+
+      if(buffer_size == devout->buffer_size){
+	return;
+      }
+
+      devout->buffer_size = buffer_size;
+
+      free(devout->buffer[0]);
+      free(devout->buffer[1]);
+      free(devout->buffer[2]);
+      free(devout->buffer[3]);
+
+      devout->buffer[0] = (signed short *) malloc((devout->pcm_channels * buffer_size) * sizeof(signed short));
+      devout->buffer[1] = (signed short *) malloc((devout->pcm_channels * buffer_size) * sizeof(signed short));
+      devout->buffer[2] = (signed short *) malloc((devout->pcm_channels * buffer_size) * sizeof(signed short));
+      devout->buffer[3] = (signed short *) malloc((devout->pcm_channels * buffer_size) * sizeof(signed short));
     }
     break;
   case PROP_FREQUENCY:
     {
-	//TODO:JK: implement me
+      guint frequency;
+
+      frequency = g_value_get_uint(value);
+
+      if(frequency == devout->frequency){
+	return;
+      }
+
+      devout->frequency = frequency;
     }
     break;
   case PROP_BUFFER:
@@ -809,44 +858,147 @@ void
 ags_devout_alsa_init(AgsDevout *devout,
 		     GError **error)
 {
+  static unsigned int period_time = 100000;
+  static snd_pcm_format_t format = SND_PCM_FORMAT_S16;
+
   int rc;
   snd_pcm_t *handle;
-  snd_pcm_hw_params_t *params;
+  snd_pcm_hw_params_t *hwparams;
   unsigned int val;
-  int dir;
   snd_pcm_uframes_t frames;
-  int err;
+  unsigned int rate;
+  unsigned int rrate;
+  unsigned int channels;
+  snd_pcm_uframes_t size;
+  snd_pcm_sframes_t buffer_size;
+  snd_pcm_sframes_t period_size;
+  snd_pcm_sw_params_t *swparams;
+  int period_event = 0;
+  int err, dir;
 
   /* Open PCM device for playback. */
-  handle = NULL;
-
-  if((AGS_DEVOUT_NONBLOCKING & (devout->flags)) == 0){
-    rc = snd_pcm_open(&handle, devout->out.alsa.device, SND_PCM_STREAM_PLAYBACK, 0);
-  }else{
-    rc = snd_pcm_open(&handle, devout->out.alsa.device, SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK);
-  }
-
-  if(rc < 0) {
-    g_message("unable to open pcm device: %s\n\0", snd_strerror(rc));
+  if ((err = snd_pcm_open(&handle, devout->out.alsa.device, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
+    printf("Playback open error: %s\n", snd_strerror(err));
     return;
   }
 
+  snd_pcm_hw_params_alloca(&hwparams);
+  snd_pcm_sw_params_alloca(&swparams);
+
+  /* choose all parameters */
+  err = snd_pcm_hw_params_any(handle, hwparams);
+  if (err < 0) {
+    printf("Broken configuration for playback: no configurations available: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* set hardware resampling */
+  err = snd_pcm_hw_params_set_rate_resample(handle, hwparams, 1);
+  if (err < 0) {
+    printf("Resampling setup failed for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* set the interleaved read/write format */
+  err = snd_pcm_hw_params_set_access(handle, hwparams, SND_PCM_ACCESS_RW_INTERLEAVED);
+  if (err < 0) {
+    printf("Access type not available for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* set the sample format */
+  err = snd_pcm_hw_params_set_format(handle, hwparams, format);
+  if (err < 0) {
+    printf("Sample format not available for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* set the count of channels */
+  channels = devout->dsp_channels;
+  err = snd_pcm_hw_params_set_channels(handle, hwparams, channels);
+  if (err < 0) {
+    printf("Channels count (%i) not available for playbacks: %s\n", channels, snd_strerror(err));
+    return;
+  }
+
+  /* set the stream rate */
+  rate = devout->frequency;
+  rrate = rate;
+  err = snd_pcm_hw_params_set_rate_near(handle, hwparams, &rrate, 0);
+  if (err < 0) {
+    printf("Rate %iHz not available for playback: %s\n", rate, snd_strerror(err));
+    return;
+  }
+
+  if (rrate != rate) {
+    printf("Rate doesn't match (requested %iHz, get %iHz)\n", rate, err);
+    exit(-EINVAL);
+  }
+
+  /* set the buffer size */
+  size = devout->buffer_size;
+  err = snd_pcm_hw_params_set_buffer_size(handle, hwparams, size);
+  if (err < 0) {
+    printf("Unable to set buffer size %i for playback: %s\n", size, snd_strerror(err));
+    return;
+  }
+
+  buffer_size = size;
+
+  /* set the period time */
+  err = snd_pcm_hw_params_set_period_time_near(handle, hwparams, &period_time, &dir);
+  if (err < 0) {
+    printf("Unable to set period time %i for playback: %s\n", period_time, snd_strerror(err));
+    return;
+  }
+
+  err = snd_pcm_hw_params_get_period_size(hwparams, &size, &dir);
+  if (err < 0) {
+    printf("Unable to get period size for playback: %s\n", snd_strerror(err));
+    return;
+  }
+  period_size = size;
+
+  /* write the parameters to device */
+  err = snd_pcm_hw_params(handle, hwparams);
+  if (err < 0) {
+    printf("Unable to set hw params for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* get the current swparams */
+  err = snd_pcm_sw_params_current(handle, swparams);
+  if (err < 0) {
+    printf("Unable to determine current swparams for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* start the transfer when the buffer is almost full: */
+  /* (buffer_size / avail_min) * avail_min */
+  err = snd_pcm_sw_params_set_start_threshold(handle, swparams, (buffer_size / period_size) * period_size);
+  if (err < 0) {
+    printf("Unable to set start threshold mode for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* allow the transfer when at least period_size samples can be processed */
+  /* or disable this mechanism when period event is enabled (aka interrupt like style processing) */
+  err = snd_pcm_sw_params_set_avail_min(handle, swparams, period_event ? buffer_size : period_size);
+  if (err < 0) {
+    printf("Unable to set avail min for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /* write the parameters to the playback device */
+  err = snd_pcm_sw_params(handle, swparams);
+  if (err < 0) {
+    printf("Unable to set sw params for playback: %s\n", snd_strerror(err));
+    return;
+  }
+
+  /*  */
   devout->out.alsa.handle = handle;
-
-  rc = snd_pcm_set_params(handle,
-			  SND_PCM_FORMAT_S16_LE,
-			  SND_PCM_ACCESS_RW_INTERLEAVED,
-			  devout->dsp_channels,
-			  devout->frequency,
-			  0,
-			  (unsigned int) floor(1000000.0 / devout->frequency * devout->buffer_size));
-
-  if(rc < 0) {
-    g_message("unable to set hw parameters: %s\0", snd_strerror(rc));
-    return;
-  }
-
-  devout->delay_counter = 0; 
+  devout->delay_counter = 0;
 }
 
 void
@@ -859,12 +1011,29 @@ ags_devout_alsa_play(AgsDevout *devout,
       
     devout->out.alsa.rc = snd_pcm_writei(devout->out.alsa.handle,
 					 devout->buffer[0],
-					 (snd_pcm_sframes_t) devout->buffer_size);
+					 (snd_pcm_uframes_t) (devout->buffer_size));
 
     if((AGS_DEVOUT_NONBLOCKING & (devout->flags)) == 0){
       if(devout->out.alsa.rc == -EPIPE){
 	/* EPIPE means underrun */
+	snd_pcm_prepare(devout->out.alsa.handle);
+
+#ifdef AGS_DEBUG
 	g_message("underrun occurred\0");
+#endif
+      }else if(devout->out.alsa.rc == -ESTRPIPE){
+	static const struct timespec idle = {
+	  0,
+	  4000,
+	};
+
+	int err;
+
+	while((err = snd_pcm_resume(devout->out.alsa.handle)) == -EAGAIN)
+	  nanosleep(&idle, NULL); /* wait until the suspend flag is released */
+	if(err < 0){
+	  err = snd_pcm_prepare(devout->out.alsa.handle);
+	}
       }else if(devout->out.alsa.rc < 0){
 	g_message("error from writei: %s\0", snd_strerror(devout->out.alsa.rc));
       }else if(devout->out.alsa.rc != (int) devout->buffer_size) {
@@ -877,12 +1046,29 @@ ags_devout_alsa_play(AgsDevout *devout,
 
     devout->out.alsa.rc = snd_pcm_writei(devout->out.alsa.handle,
 					 devout->buffer[1],
-					 (snd_pcm_sframes_t) devout->buffer_size);
+					 (snd_pcm_uframes_t) (devout->buffer_size));
      
     if((AGS_DEVOUT_NONBLOCKING & (devout->flags)) == 0){
       if(devout->out.alsa.rc == -EPIPE){
 	/* EPIPE means underrun */
+	snd_pcm_prepare(devout->out.alsa.handle);
+
+#ifdef AGS_DEBUG
 	g_message("underrun occurred\0");
+#endif
+      }else if(devout->out.alsa.rc == -ESTRPIPE){
+	static const struct timespec idle = {
+	  0,
+	  4000,
+	};
+
+	int err;	
+
+	while((err = snd_pcm_resume(devout->out.alsa.handle)) == -EAGAIN)
+	  nanosleep(&idle, NULL); /* wait until the suspend flag is released */
+	if(err < 0){
+	  err = snd_pcm_prepare(devout->out.alsa.handle);
+	}
       }else if(devout->out.alsa.rc < 0){
 	g_message("error from writei: %s\0", snd_strerror(devout->out.alsa.rc));
       }else if(devout->out.alsa.rc != (int) devout->buffer_size) {
@@ -895,12 +1081,29 @@ ags_devout_alsa_play(AgsDevout *devout,
       
     devout->out.alsa.rc = snd_pcm_writei(devout->out.alsa.handle,
 					 devout->buffer[2],
-					 (snd_pcm_sframes_t) devout->buffer_size);
+					 (snd_pcm_uframes_t) (devout->buffer_size));
 
     if((AGS_DEVOUT_NONBLOCKING & (devout->flags)) == 0){
       if(devout->out.alsa.rc == -EPIPE){
 	/* EPIPE means underrun */
+	snd_pcm_prepare(devout->out.alsa.handle);
+
+#ifdef AGS_DEBUG
 	g_message("underrun occurred\0");
+#endif
+      }else if(devout->out.alsa.rc == -ESTRPIPE){
+	static const struct timespec idle = {
+	  0,
+	  4000,
+	};
+
+	int err;
+
+	while((err = snd_pcm_resume(devout->out.alsa.handle)) == -EAGAIN)
+	  nanosleep(&idle, NULL); /* wait until the suspend flag is released */
+	if(err < 0){
+	  err = snd_pcm_prepare(devout->out.alsa.handle);
+	}
       }else if(devout->out.alsa.rc < 0){
 	g_message("error from writei: %s\0", snd_strerror(devout->out.alsa.rc));
       }else if(devout->out.alsa.rc != (int) devout->buffer_size) {
@@ -913,12 +1116,28 @@ ags_devout_alsa_play(AgsDevout *devout,
       
     devout->out.alsa.rc = snd_pcm_writei(devout->out.alsa.handle,
 					 devout->buffer[3],
-					 (snd_pcm_sframes_t) devout->buffer_size);
+					 (snd_pcm_uframes_t) (devout->buffer_size));
 
     if((AGS_DEVOUT_NONBLOCKING & (devout->flags)) == 0){
       if(devout->out.alsa.rc == -EPIPE){
-	/* EPIPE means underrun */
+	snd_pcm_prepare(devout->out.alsa.handle);
+
+#ifdef AGS_DEBUG
 	g_message("underrun occurred\0");
+#endif
+      }else if(devout->out.alsa.rc == -ESTRPIPE){
+	static const struct timespec idle = {
+	  0,
+	  4000,
+	};
+
+	int err;
+
+	while((err = snd_pcm_resume(devout->out.alsa.handle)) == -EAGAIN)
+	  nanosleep(&idle, NULL); /* wait until the suspend flag is released */
+	if(err < 0){
+	  err = snd_pcm_prepare(devout->out.alsa.handle);
+	}
       }else if(devout->out.alsa.rc < 0){
 	g_message("error from writei: %s\0", snd_strerror(devout->out.alsa.rc));
       }else if(devout->out.alsa.rc != (int) devout->buffer_size) {
@@ -928,17 +1147,13 @@ ags_devout_alsa_play(AgsDevout *devout,
     //      g_message("ags_devout_play 3\0");
   }
 
-  /*
-    if((AGS_DEVOUT_COUNT & (devout->flags)) != 0)
-    devout->offset++;
-  */
-
   /* determine if attack should be switched */
-  devout->delay_counter += 1;
+  devout->delay_counter += (AGS_DEVOUT_DEFAULT_DELAY *
+			    AGS_NOTATION_MINIMUM_NOTE_LENGTH);
 
   if(devout->delay_counter >= devout->delay[devout->tic_counter]){
     /* tic */
-    ags_devout_tic(devout);
+    //    ags_devout_tic(devout);
 
     devout->tic_counter += 1;
 

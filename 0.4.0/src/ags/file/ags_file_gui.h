@@ -45,6 +45,7 @@
 #include <ags/X/ags_resize_editor.h>
 
 #include <ags/X/editor/ags_toolbar.h>
+#include <ags/X/editor/ags_machine_selector.h>
 #include <ags/X/editor/ags_notebook.h>
 
 #include <ags/X/machine/ags_panel.h>
@@ -52,7 +53,6 @@
 #include <ags/X/machine/ags_drum.h>
 #include <ags/X/machine/ags_matrix.h>
 #include <ags/X/machine/ags_synth.h>
-#include <ags/X/machine/ags_oscillator.h>
 #include <ags/X/machine/ags_ffplayer.h>
 
 /* GtkWidget */
@@ -81,24 +81,6 @@ xmlNode* ags_file_write_machine(AgsFile *file, xmlNode *parent, AgsMachine *mach
 void ags_file_read_machine_list(AgsFile *file, xmlNode *node, GList **machine);
 xmlNode* ags_file_write_machine_list(AgsFile *file, xmlNode *parent, GList *machine);
 
-void ags_file_read_panel(AgsFile *file, xmlNode *node, AgsMachine *panel);
-xmlNode* ags_file_write_panel(AgsFile *file, xmlNode *parent, AgsMachine *panel);
-
-void ags_file_read_mixer(AgsFile *file, xmlNode *node, AgsMachine *mixer);
-xmlNode* ags_file_write_mixer(AgsFile *file, xmlNode *parent, AgsMachine *mixer);
-
-void ags_file_read_drum(AgsFile *file, xmlNode *node, AgsMachine *drum);
-xmlNode* ags_file_write_drum(AgsFile *file, xmlNode *parent, AgsMachine *drum);
-
-void ags_file_read_matrix(AgsFile *file, xmlNode *node, AgsMachine *matrix);
-xmlNode* ags_file_write_matrix(AgsFile *file, xmlNode *parent, AgsMachine *matrix);
-
-void ags_file_read_synth(AgsFile *file, xmlNode *node, AgsMachine *synth);
-xmlNode* ags_file_write_synth(AgsFile *file, xmlNode *parent, AgsMachine *synth);
-
-void ags_file_read_ffplayer(AgsFile *file, xmlNode *node, AgsMachine *ffplayer);
-xmlNode* ags_file_write_ffplayer(AgsFile *file, xmlNode *parent, AgsMachine *ffplayer);
-
 /* AgsPad */
 void ags_file_read_pad(AgsFile *file, xmlNode *node, AgsPad **pad);
 xmlNode* ags_file_write_pad(AgsFile *file, xmlNode *parent, AgsPad *pad);
@@ -112,27 +94,12 @@ xmlNode* ags_file_write_mixer_input_pad(AgsFile *file, xmlNode *parent, AgsPad *
 void ags_file_read_mixer_output_pad(AgsFile *file, xmlNode *node, AgsPad *mixer_output_pad);
 xmlNode* ags_file_write_mixer_output_pad(AgsFile *file, xmlNode *parent, AgsPad *mixer_output_pad);
 
-void ags_file_read_drum_input_pad(AgsFile *file, xmlNode *node, AgsPad *drum_input_pad);
-xmlNode* ags_file_write_drum_input_pad(AgsFile *file, xmlNode *parent, AgsPad *drum_input_pad);
-
-void ags_file_read_drum_output_pad(AgsFile *file, xmlNode *node, AgsPad *drum_output_pad);
-xmlNode* ags_file_write_drum_output_pad(AgsFile *file, xmlNode *parent, AgsPad *drum_output_pad);
-
 /* AgsLine */
 void ags_file_read_line(AgsFile *file, xmlNode *node, AgsLine **line);
 xmlNode* ags_file_write_line(AgsFile *file, xmlNode *parent, AgsLine *line);
 
 void ags_file_read_line_list(AgsFile *file, xmlNode *node, GList **line);
 xmlNode* ags_file_write_line_list(AgsFile *file, xmlNode *parent, GList *line);
-
-void ags_file_read_drum_input_line(AgsFile *file, xmlNode *node, AgsLine *drum_output_line);
-xmlNode* ags_file_write_drum_input_line(AgsFile *file, xmlNode *parent, AgsLine *drum_output_line);
-
-void ags_file_read_drum_output_line(AgsFile *file, xmlNode *node, AgsLine *drum_output_line);
-xmlNode* ags_file_write_drum_output_line(AgsFile *file, xmlNode *parent, AgsLine *drum_output_line);
-
-void ags_file_read_oscillator(AgsFile *file, xmlNode *node, AgsOscillator *oscillator);
-xmlNode* ags_file_write_oscillator(AgsFile *file, xmlNode *parent, AgsOscillator *oscillator);
 
 /* AgsLineMember */
 void ags_file_read_line_member(AgsFile *file, xmlNode *node, AgsLineMember **line_member);
@@ -181,12 +148,9 @@ xmlNode* ags_file_write_editor(AgsFile *file, xmlNode *parent, AgsEditor *editor
 void ags_file_read_toolbar(AgsFile *file, xmlNode *node, AgsToolbar **toolbar);
 xmlNode* ags_file_write_toolbar(AgsFile *file, xmlNode *parent, AgsToolbar *toolbar);
 
-/* GtkVBox */
-void ags_file_read_editor_pane_list(AgsFile *file, xmlNode *node, GList **list);
-xmlNode* ags_file_write_editor_pane_list(AgsFile *file, xmlNode *parent, GList *list);
-
-void ags_file_read_editor_pane(AgsFile *file, xmlNode *node, GtkVBox **editor_pane);
-xmlNode* ags_file_write_editor_pane(AgsFile *file, xmlNode *parent, GtkVBox *editor_pane);
+/* AgsMachineSelector */
+void ags_file_read_machine_selector(AgsFile *file, xmlNode *parent, AgsMachineSelector **machine_selector);
+xmlNode* ags_file_write_machine_selector(AgsFile *file, xmlNode *node, AgsMachineSelector *machine_selector);
 
 /* AgsNotebook */
 void ags_file_read_notebook(AgsFile *file, xmlNode *node, AgsNotebook **notebook);

@@ -19,9 +19,20 @@
 #include <ags/X/machine/ags_drum.h>
 #include <ags/X/machine/ags_drum_callbacks.h>
 
+#include <ags/main.h>
+
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/util/ags_id_generator.h>
+
 #include <ags/object/ags_portlet.h>
+#include <ags/object/ags_plugin.h>
+
+#include <ags/file/ags_file.h>
+#include <ags/file/ags_file_stock.h>
+#include <ags/file/ags_file_id_ref.h>
+#include <ags/file/ags_file_lookup.h>
+#include <ags/file/ags_file_launch.h>
 
 #include <ags/widget/ags_led.h>
 
@@ -59,12 +70,21 @@
 
 void ags_drum_class_init(AgsDrumClass *drum);
 void ags_drum_connectable_interface_init(AgsConnectableInterface *connectable);
+void ags_drum_plugin_interface_init(AgsPluginInterface *plugin);
 void ags_drum_init(AgsDrum *drum);
 void ags_drum_finalize(GObject *gobject);
 void ags_drum_connect(AgsConnectable *connectable);
 void ags_drum_disconnect(AgsConnectable *connectable);
 void ags_drum_show(GtkWidget *widget);
+void ags_drum_show_all(GtkWidget *widget);
 void ags_drum_add_default_recalls(AgsMachine *machine);
+gchar* ags_drum_get_name(AgsPlugin *plugin);
+void ags_drum_set_name(AgsPlugin *plugin, gchar *name);
+gchar* ags_drum_get_xml_type(AgsPlugin *plugin);
+void ags_drum_set_xml_type(AgsPlugin *plugin, gchar *xml_type);
+void ags_drum_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
+void ags_drum_launch_task(AgsFileLaunch *file_launch, AgsDrum *drum);
+xmlNode* ags_drum_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 
 void ags_drum_set_audio_channels(AgsAudio *audio,
 				 guint audio_channels, guint audio_channels_old,
@@ -103,13 +123,23 @@ ags_drum_get_type(void)
       NULL, /* interface_data */
     };
 
+    static const GInterfaceInfo ags_plugin_interface_info = {
+      (GInterfaceInitFunc) ags_drum_plugin_interface_init,
+      NULL, /* interface_finalize */
+      NULL, /* interface_data */
+    };
+
     ags_type_drum = g_type_register_static(AGS_TYPE_MACHINE,
-					    "AgsDrum\0", &ags_drum_info,
-					    0);
+					   "AgsDrum\0", &ags_drum_info,
+					   0);
     
     g_type_add_interface_static(ags_type_drum,
 				AGS_TYPE_CONNECTABLE,
 				&ags_connectable_interface_info);
+
+    g_type_add_interface_static(ags_type_drum,
+				AGS_TYPE_PLUGIN,
+				&ags_plugin_interface_info);
   }
 
   return(ags_type_drum);
@@ -119,6 +149,7 @@ void
 ags_drum_class_init(AgsDrumClass *drum)
 {
   GObjectClass *gobject;
+  GtkWidgetClass *widget;
   AgsMachineClass *machine;
 
   ags_drum_parent_class = g_type_class_peek_parent(drum);
@@ -128,12 +159,16 @@ ags_drum_class_init(AgsDrumClass *drum)
 
   gobject->finalize = ags_drum_finalize;
 
+  /* GtkWidget */
+  widget = (GtkWidgetClass *) drum;
+
+  widget->show = ags_drum_show;
+  widget->show_all = ags_drum_show_all;
+
   /*  */
   machine = (AgsMachineClass *) drum;
 
   machine->add_default_recalls = ags_drum_add_default_recalls;
-  //  machine->read_file = ags_file_read_drum;
-  //  machine->write_file = ags_file_write_drum;
 }
 
 void
@@ -143,6 +178,17 @@ ags_drum_connectable_interface_init(AgsConnectableInterface *connectable)
 
   connectable->connect = ags_drum_connect;
   connectable->disconnect = ags_drum_disconnect;
+}
+
+void
+ags_drum_plugin_interface_init(AgsPluginInterface *plugin)
+{
+  plugin->get_name = ags_drum_get_name;
+  plugin->set_name = ags_drum_set_name;
+  plugin->get_xml_type = ags_drum_get_xml_type;
+  plugin->set_xml_type = ags_drum_set_xml_type;
+  plugin->read = ags_drum_read;
+  plugin->write = ags_drum_write;
 }
 
 void
@@ -262,15 +308,14 @@ ags_drum_init(AgsDrum *drum)
   gtk_toggle_button_set_active(drum->index0[0], TRUE);
 
   /* tact */
-  drum->tact = (GtkOptionMenu *) gtk_option_menu_new();
+  drum->tact = (GtkOptionMenu *) ags_tact_combo_box_new();
   gtk_table_attach(table0,
 		   (GtkWidget *) drum->tact,
 		   5, 6, 0, 1,
 		   GTK_EXPAND, GTK_EXPAND,
 		   0, 0);
 
-  gtk_option_menu_set_menu(drum->tact, (GtkWidget *) ags_tact_menu_new());
-  gtk_option_menu_set_history(drum->tact, 4);
+  gtk_combo_box_set_active(drum->tact, 4);
 
   /* duration */
   hbox = (GtkHBox *) gtk_hbox_new(FALSE, 0);
@@ -436,6 +481,17 @@ ags_drum_disconnect(AgsConnectable *connectable)
 void
 ags_drum_show(GtkWidget *widget)
 {
+  GTK_WIDGET_CLASS(ags_drum_parent_class)->show(widget);
+
+  ags_drum_set_pattern(AGS_DRUM(widget));
+}
+
+void
+ags_drum_show_all(GtkWidget *widget)
+{
+  GTK_WIDGET_CLASS(ags_drum_parent_class)->show_all(widget);
+
+  ags_drum_set_pattern(AGS_DRUM(widget));
 }
 
 void
@@ -517,6 +573,189 @@ ags_drum_add_default_recalls(AgsMachine *machine)
   }
 }
 
+gchar*
+ags_drum_get_name(AgsPlugin *plugin)
+{
+  return(AGS_DRUM(plugin)->name);
+}
+
+void
+ags_drum_set_name(AgsPlugin *plugin, gchar *name)
+{
+  AGS_DRUM(plugin)->name = name;
+}
+
+gchar*
+ags_drum_get_xml_type(AgsPlugin *plugin)
+{
+  return(AGS_DRUM(plugin)->xml_type);
+}
+
+void
+ags_drum_set_xml_type(AgsPlugin *plugin, gchar *xml_type)
+{
+  AGS_DRUM(plugin)->xml_type = xml_type;
+}
+
+void
+ags_drum_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin)
+{
+  AgsDrum *gobject;
+  AgsFileLaunch *file_launch;
+  GList *list;
+  guint64 index;
+
+  gobject = AGS_DRUM(plugin);
+
+  ags_file_add_id_ref(file,
+		      g_object_new(AGS_TYPE_FILE_ID_REF,
+				   "main\0", file->ags_main,
+				   "file\0", file,
+				   "node\0", node,
+				   "xpath\0", g_strdup_printf("xpath=//*[@id='%s']\0", xmlGetProp(node, AGS_FILE_ID_PROP)),
+				   "reference\0", gobject,
+				   NULL));
+
+  index = g_ascii_strtoull(xmlGetProp(node,
+				      "bank-index-0\0"),
+			   NULL,
+			   10);
+
+  if(index != 0){
+    gtk_toggle_button_set_active(gobject->index0[0],
+				 FALSE);
+    gtk_toggle_button_set_active(gobject->index0[index],
+				 TRUE);
+    gobject->selected0 = gobject->index0[index];
+  }
+
+  index = g_ascii_strtoull(xmlGetProp(node,
+				      "bank-index-1\0"),
+			   NULL,
+			   10);
+
+  if(index != 0){
+    gtk_toggle_button_set_active(gobject->index1[0],
+				 FALSE);
+    gtk_toggle_button_set_active(gobject->index1[index],
+				 TRUE);
+    gobject->selected1 = gobject->index1[index];
+  }
+
+  file_launch = g_object_new(AGS_TYPE_FILE_LAUNCH,
+			     "node\0", node,
+			     NULL);
+  g_signal_connect(G_OBJECT(file_launch), "start\0",
+		   G_CALLBACK(ags_drum_launch_task), gobject);
+}
+
+void
+ags_drum_launch_task(AgsFileLaunch *file_launch, AgsDrum *drum)
+{
+  GList *list;
+  gchar *tact;
+  gdouble length;
+  gint history, i;
+
+  /* tact */
+  tact = (gchar *) xmlGetProp(file_launch->node,
+			      "tact\0");
+
+  list = gtk_container_get_children(gtk_combo_box_get_active(drum->tact));
+  history = -1;
+  i = 0;
+
+  while(list != NULL){
+    if(!g_strcmp0(gtk_menu_item_get_label(GTK_MENU_ITEM(list->data)),
+		  tact)){
+      history = i;
+      break;
+    }
+
+    list = list->next;
+    i++;
+  }
+
+  if(history != -1){
+    gtk_combo_box_set_active(drum->tact,
+			     history);
+  }
+
+  /* length */
+  length = (gdouble) g_ascii_strtod(xmlGetProp(file_launch->node,
+					       "length\0"),
+				    NULL);
+  gtk_spin_button_set_value(drum->length_spin,
+			    length);
+
+  /* loop */
+  if(!g_strcmp0(xmlGetProp(file_launch->node,
+			   "loop\0"),
+		AGS_FILE_TRUE)){
+    gtk_toggle_button_set_active(drum->loop_button,
+				 TRUE);
+  }
+}
+
+xmlNode*
+ags_drum_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin)
+{
+  AgsDrum *drum;
+  xmlNode *node;
+  GList *list;
+  gchar *id;
+  gint history;
+  guint i;
+
+  drum = AGS_DRUM(plugin);
+
+  id = ags_id_generator_create_uuid();
+  
+  node = xmlNewNode(NULL,
+		    "ags-drum\0");
+  xmlNewProp(node,
+	     AGS_FILE_ID_PROP,
+	     id);
+
+  ags_file_add_id_ref(file,
+		      g_object_new(AGS_TYPE_FILE_ID_REF,
+				   "main\0", file->ags_main,
+				   "file\0", file,
+				   "node\0", node,
+				   "xpath\0", g_strdup_printf("xpath=//*[@id='%s']\0", id),
+				   "reference\0", drum,
+				   NULL));
+
+  history = gtk_combo_box_get_active(drum->tact);
+
+  xmlNewProp(node,
+	     "tact\0",
+	     g_strdup_printf("%s\0", gtk_combo_box_text_get_active_text(drum->tact)));
+
+  xmlNewProp(node,
+	     "length\0",
+	     g_strdup_printf("%d\0", (gint) gtk_spin_button_get_value(drum->length_spin)));
+
+  for(i = 0; drum->selected0 != drum->index0[i]; i++);
+
+  xmlNewProp(node,
+	     "bank-index-0\0",
+	     g_strdup_printf("%d\0", i));
+
+  for(i = 0; drum->selected1 != drum->index1[i]; i++);
+
+  xmlNewProp(node,
+	     "bank-index-1\0",
+	     g_strdup_printf("%d\0", i));
+
+  xmlNewProp(node,
+	     "loop\0",
+	     g_strdup_printf("%s\0", (gtk_toggle_button_get_active(drum->loop_button) ? AGS_FILE_TRUE: AGS_FILE_FALSE)));
+
+  xmlAddChild(parent,
+	      node);  
+}
+
 void
 ags_drum_set_audio_channels(AgsAudio *audio,
 			    guint audio_channels, guint audio_channels_old,
@@ -566,6 +805,7 @@ ags_drum_set_audio_channels(AgsAudio *audio,
 
 	if(GTK_WIDGET_VISIBLE((GtkWidget *) drum)){
 	  ags_connectable_connect(AGS_CONNECTABLE(drum_input_pad));
+	  ags_pad_find_port(AGS_PAD(drum_input_pad));
 	  gtk_widget_show_all((GtkWidget *) drum_input_pad);
 	}
       }else{
@@ -618,6 +858,7 @@ ags_drum_set_audio_channels(AgsAudio *audio,
 
 	if(GTK_WIDGET_VISIBLE((GtkWidget *) drum)){
 	  ags_connectable_connect(AGS_CONNECTABLE(drum_input_pad));
+	  ags_pad_find_port(AGS_PAD(drum_output_pad));
 	  gtk_widget_show_all((GtkWidget *) drum_output_pad);
 	}
       }else{
@@ -724,6 +965,7 @@ ags_drum_set_pads(AgsAudio *audio, GType type,
 
 	if(GTK_WIDGET_VISIBLE((GtkWidget *) drum)){
 	  ags_connectable_connect(AGS_CONNECTABLE(drum_input_pad));
+	  ags_pad_find_port(AGS_PAD(drum_input_pad));
 	  gtk_widget_show_all((GtkWidget *) drum_input_pad);
 	}
 
@@ -732,19 +974,22 @@ ags_drum_set_pads(AgsAudio *audio, GType type,
 
 
       /* set pattern object on port */
-      channel = ags_channel_pad_nth(audio->input, pads_old);
+      channel = ags_channel_nth(audio->input, pads_old * audio->audio_channels);
       
       for(i = pads_old; i < pads; i++){
 	for(j = 0; j < audio->audio_channels; j++){
 	  list = ags_recall_template_find_type(channel->recall, AGS_TYPE_COPY_PATTERN_CHANNEL);
-	  copy_pattern_channel = AGS_COPY_PATTERN_CHANNEL(list->data);
 
-	  list = channel->pattern;
-	  pattern = AGS_PATTERN(list->data);
-
-	  copy_pattern_channel->pattern->port_value.ags_port_object = (GObject *) pattern;
+	  if(list != NULL){
+	    copy_pattern_channel = AGS_COPY_PATTERN_CHANNEL(list->data);
+	    
+	    list = channel->pattern;
+	    pattern = AGS_PATTERN(list->data);
 	  
-	  ags_portlet_set_port(AGS_PORTLET(pattern), copy_pattern_channel->pattern);
+	    copy_pattern_channel->pattern->port_value.ags_port_object = (GObject *) pattern;
+	  
+	    ags_portlet_set_port(AGS_PORTLET(pattern), copy_pattern_channel->pattern);
+	  }
 	  
 	  channel = channel->next;
 	}
@@ -804,6 +1049,7 @@ ags_drum_set_pads(AgsAudio *audio, GType type,
 
 	if(GTK_WIDGET_VISIBLE((GtkWidget *) drum)){
 	  ags_connectable_connect(AGS_CONNECTABLE(drum_output_pad));
+	  ags_pad_find_port(AGS_PAD(drum_output_pad));
 	  gtk_widget_show_all((GtkWidget *) drum_output_pad);
 	}
 

@@ -21,6 +21,12 @@
 
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/object/ags_plugin.h>
+
+#include <ags/file/ags_file.h>
+#include <ags/file/ags_file_id_ref.h>
+#include <ags/file/ags_file_lookup.h>
+
 #include <ags/audio/ags_audio.h>
 #include <ags/audio/ags_input.h>
 #include <ags/audio/ags_output.h>
@@ -44,6 +50,9 @@ void ags_panel_connect(AgsConnectable *connectable);
 void ags_panel_disconnect(AgsConnectable *connectable);
 void ags_panel_show(GtkWidget *widget);
 void ags_panel_add_default_recalls(AgsMachine *machine);
+
+void ags_file_read_panel(AgsFile *file, xmlNode *node, AgsMachine *panel);
+xmlNode* ags_file_write_panel(AgsFile *file, xmlNode *parent, AgsMachine *panel);
 
 void ags_panel_set_audio_channels(AgsAudio *audio,
 				  guint audio_channels, guint audio_channels_old,
@@ -196,16 +205,7 @@ ags_panel_show(GtkWidget *widget)
 void
 ags_panel_add_default_recalls(AgsMachine *machine)
 {
-  /* ags-play */
-  ags_recall_factory_create(machine->audio,
-			    NULL, NULL,
-			    "ags-play-master\0",
-			    0, 0,
-			    0, 0,
-			    (AGS_RECALL_FACTORY_INPUT,
-			     AGS_RECALL_FACTORY_ADD |
-			     AGS_RECALL_FACTORY_PLAY),
-			    0);
+  //empty
 }
 
 void
@@ -241,6 +241,7 @@ ags_panel_set_audio_channels(AgsAudio *audio,
 
 	if(GTK_WIDGET_VISIBLE((GtkWidget *) panel)){
 	  ags_connectable_connect(AGS_CONNECTABLE(panel_input_pad));
+	  ags_pad_find_port(AGS_PAD(panel_input_pad));
 	  gtk_widget_show_all((GtkWidget *) panel_input_pad);
 	}
       }else{
@@ -308,6 +309,7 @@ ags_panel_set_pads(AgsAudio *audio, GType type,
 
 	if(GTK_WIDGET_VISIBLE((GtkWidget *) panel)){
 	  ags_connectable_connect(AGS_CONNECTABLE(panel_input_pad));
+	  ags_pad_find_port(AGS_PAD(panel_input_pad));
 	  gtk_widget_show_all((GtkWidget *) panel_input_pad);
 	}
 

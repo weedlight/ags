@@ -32,8 +32,6 @@
 #include <ags/audio/ags_recall_channel.h>
 #include <ags/audio/ags_recall_channel_run.h>
 #include <ags/audio/ags_recall_recycling.h>
-
-#include <ags/audio/task/ags_unref_audio_signal.h>
  
 void ags_buffer_audio_signal_class_init(AgsBufferAudioSignalClass *buffer_audio_signal);
 void ags_buffer_audio_signal_connectable_interface_init(AgsConnectableInterface *connectable);
@@ -159,28 +157,7 @@ ags_buffer_audio_signal_init(AgsBufferAudioSignal *buffer_audio_signal)
 void
 ags_buffer_audio_signal_finalize(GObject *gobject)
 {
-  AgsDevout *devout;
-  AgsBufferAudioSignal *buffer_audio_signal;
-  AgsRecallAudioSignal *recall_audio_signal;
-  AgsUnrefAudioSignal *unref_audio_signal;
-  AgsAudioSignal *audio_signal;
-
-  buffer_audio_signal = AGS_BUFFER_AUDIO_SIGNAL(gobject);
-  recall_audio_signal = AGS_RECALL_AUDIO_SIGNAL(gobject);
-
-  audio_signal = recall_audio_signal->source;
-
-  if(AGS_RECALL(recall_audio_signal)->parent != NULL){
-    ags_recycling_remove_audio_signal(AGS_RECYCLING(AGS_RECALL_RECYCLING(AGS_RECALL(recall_audio_signal)->parent)->source),
-				      recall_audio_signal->source);
-  }
-
-  if(recall_audio_signal->source != NULL){
-    g_object_unref(G_OBJECT(recall_audio_signal->source));
-    /* unref audio signal */
-    //    unref_audio_signal = ags_unref_audio_signal_new(audio_signal);
-    //    ags_devout_append_task(AGS_DEVOUT(AGS_RECALL(recall_audio_signal)->devout), (AgsTask *) unref_audio_signal);
-  }
+  /* empty */
 
   /* call parent */
   G_OBJECT_CLASS(ags_buffer_audio_signal_parent_class)->finalize(gobject); 
@@ -225,7 +202,42 @@ ags_buffer_audio_signal_disconnect_dynamic(AgsDynamicConnectable *dynamic_connec
 void
 ags_buffer_audio_signal_run_init_pre(AgsRecall *recall)
 {
-  recall->flags &= (~AGS_RECALL_PERSISTENT);
+  AgsDevout *devout;
+  AgsRecycling *recycling;
+  AgsAudioSignal *destination;
+  AgsBufferRecycling *buffer_recycling;
+  AgsBufferAudioSignal *buffer_audio_signal;
+
+  buffer_audio_signal = AGS_BUFFER_AUDIO_SIGNAL(recall);
+  buffer_recycling = AGS_BUFFER_RECYCLING(recall->parent);
+
+  devout = AGS_DEVOUT(AGS_RECALL(buffer_audio_signal)->devout);
+
+  //  recall->flags &= (~AGS_RECALL_PERSISTENT);
+  recycling = AGS_RECALL_RECYCLING(buffer_recycling)->destination;
+
+  /* create new audio signal */
+  destination = ags_audio_signal_new((GObject *) devout,
+				     (GObject *) recycling,
+				     (GObject *) recall->recall_id->recycling_container->parent->recall_id);
+  ags_recycling_create_audio_signal_with_frame_count(recycling,
+						     destination,
+						     AGS_DEVOUT_DEFAULT_SAMPLERATE / AGS_NOTATION_DEFAULT_JIFFIE + 2 * AGS_DEVOUT_DEFAULT_BUFFER_SIZE,
+						     0, 0);
+  ags_audio_signal_connect(destination);
+  
+  destination->stream_current = destination->stream_beginning;
+  ags_recycling_add_audio_signal(recycling,
+				 destination);
+
+  AGS_RECALL_AUDIO_SIGNAL(buffer_audio_signal)->destination = destination;
+  g_object_unref(destination);
+  
+
+#ifdef AGS_DEBUG	
+  g_message("creating destination\0");
+#endif
+
 
   /* call parent */
   AGS_RECALL_CLASS(ags_buffer_audio_signal_parent_class)->run_init_pre(recall);
@@ -234,29 +246,8 @@ ags_buffer_audio_signal_run_init_pre(AgsRecall *recall)
 void
 ags_buffer_audio_signal_run_pre(AgsRecall *recall)
 {
-  AgsDevout *devout;
-  AgsRecycling *recycling;
-  AgsAudioSignal *audio_signal;
-  AgsBufferAudioSignal *buffer_audio_signal;
-  AgsBufferRecycling *buffer_recycling;
-
   /* call parent */
   AGS_RECALL_CLASS(ags_buffer_audio_signal_parent_class)->run_pre(recall);
-
-  /* initialize some variables */
-  buffer_audio_signal = AGS_BUFFER_AUDIO_SIGNAL(recall);
-  buffer_recycling = AGS_BUFFER_RECYCLING(recall->parent);
-
-  recycling = AGS_RECALL_RECYCLING(buffer_recycling)->destination;
-
-  /* create new audio signal */
-  audio_signal = ags_audio_signal_new_with_length(recall->devout,
-						  recycling,
-						  recall->recall_id,
-						  1);
-
-  ags_recycling_add_audio_signal(recycling,
-				 audio_signal);
 }
 
 void
@@ -265,9 +256,9 @@ ags_buffer_audio_signal_run_inter(AgsRecall *recall)
   AgsDevout *devout;
   AgsRecycling *recycling;
   AgsAudioSignal *source, *destination;
-  AgsBufferAudioSignal *buffer_audio_signal;
-  AgsBufferRecycling *buffer_recycling;
   AgsBufferChannel *buffer_channel;
+  AgsBufferRecycling *buffer_recycling;
+  AgsBufferAudioSignal *buffer_audio_signal;
   GList *stream_source, *stream_destination;
   gboolean muted;
   GValue value = {0,};
@@ -277,26 +268,23 @@ ags_buffer_audio_signal_run_inter(AgsRecall *recall)
 
   /* initialize some variables */
   buffer_audio_signal = AGS_BUFFER_AUDIO_SIGNAL(recall);
+  buffer_recycling = AGS_BUFFER_RECYCLING(recall->parent);
+  buffer_channel = AGS_BUFFER_CHANNEL(AGS_RECALL_CHANNEL_RUN(AGS_RECALL(buffer_recycling)->parent)->recall_channel);
 
   devout = AGS_DEVOUT(AGS_RECALL(buffer_audio_signal)->devout);
   source = AGS_RECALL_AUDIO_SIGNAL(buffer_audio_signal)->source;
   stream_source = source->stream_current;
 
   if(stream_source == NULL){
-    ags_recall_done(recall);
+    if((AGS_RECALL_PERSISTENT & (recall->flags)) == 0){
+      ags_recall_done(recall);
+    }
+
     return;
   }
 
   //FIXME:JK: attack probably needs to be removed
   destination = AGS_RECALL_AUDIO_SIGNAL(buffer_audio_signal)->destination;
-
-  if(destination == NULL){
-    g_warning("no destination\0");
-    return;
-  }
-
-  buffer_recycling = AGS_BUFFER_RECYCLING(recall->parent);
-  buffer_channel = AGS_BUFFER_CHANNEL(AGS_RECALL_CHANNEL_RUN(AGS_RECALL(buffer_recycling)->parent)->recall_channel);
 
   g_value_init(&value, G_TYPE_BOOLEAN);
   ags_port_safe_read(buffer_channel->muted,
@@ -311,6 +299,10 @@ ags_buffer_audio_signal_run_inter(AgsRecall *recall)
 
   stream_destination = destination->stream_current;
 
+  if(stream_destination->next == NULL){
+    ags_audio_signal_add_stream(destination);
+  }
+
   ags_audio_signal_copy_buffer_to_buffer((signed short *) stream_destination->data, 1,
 					 (signed short *) stream_source->data, 1,
 					 devout->buffer_size);
@@ -324,9 +316,9 @@ ags_buffer_audio_signal_duplicate(AgsRecall *recall,
   AgsBufferAudioSignal *buffer;
 
   buffer = (AgsBufferAudioSignal *) AGS_RECALL_CLASS(ags_buffer_audio_signal_parent_class)->duplicate(recall,
-												    recall_id,
-												    n_params, parameter);
-
+												      recall_id,
+												      n_params, parameter);
+  
   return((AgsRecall *) buffer);
 }
 

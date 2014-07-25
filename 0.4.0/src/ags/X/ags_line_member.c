@@ -59,6 +59,7 @@ enum{
 enum{
   PROP_0,
   PROP_WIDGET_TYPE,
+  PROP_WIDGET_LABEL,
   PROP_PLUGIN_NAME,
   PROP_SPECIFIER,
   PROP_CONTROL_PORT,
@@ -126,12 +127,21 @@ ags_line_member_class_init(AgsLineMemberClass *line_member)
   /* properties */
   param_spec = g_param_spec_ulong("widget-type\0",
 				  "widget type of line member\0",
-				  "The widget_type this line member packs\0",
+				  "The widget type this line member packs\0",
 				  0, G_MAXULONG, 
 				  G_TYPE_NONE,
 				  G_PARAM_READABLE | G_PARAM_WRITABLE);
   g_object_class_install_property(gobject,
 				  PROP_WIDGET_TYPE,
+				  param_spec);
+
+  param_spec = g_param_spec_string("widget-label\0",
+				   "label to display\0",
+				   "The label to display\0",
+				   NULL,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_WIDGET_LABEL,
 				  param_spec);
 
   param_spec = g_param_spec_string("plugin-name\0",
@@ -143,6 +153,15 @@ ags_line_member_class_init(AgsLineMemberClass *line_member)
 				  PROP_PLUGIN_NAME,
 				  param_spec);
 
+  param_spec = g_param_spec_string("specifier\0",
+				   "port specifier\0",
+				   "The specifier of the port\0",
+				   NULL,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_SPECIFIER,
+				  param_spec);
+
   param_spec = g_param_spec_string("control-port\0",
 				   "control port index\0",
 				   "The index of the port to control\0",
@@ -152,8 +171,36 @@ ags_line_member_class_init(AgsLineMemberClass *line_member)
 				  PROP_CONTROL_PORT,
 				  param_spec);
 
+  param_spec = g_param_spec_object("port\0",
+				   "port to apply\0",
+				   "The port to apply\0",
+				   AGS_TYPE_PORT,
+				   G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_PORT,
+				  param_spec);
+
+
+  param_spec = g_param_spec_pointer("port-data\0",
+				    "port data\0",
+				    "The port data\0",
+				    G_PARAM_READABLE | G_PARAM_WRITABLE);
+  g_object_class_install_property(gobject,
+				  PROP_PORT_DATA,
+				  param_spec);
+
   /* AgsLineMember */
-  line_member->change_port = ags_line_member_change_port;
+  line_member->change_port = ags_line_member_real_change_port;
+
+  line_member_signals[CHANGE_PORT] =
+    g_signal_new("change-port\0",
+		 G_TYPE_FROM_CLASS(line_member),
+		 G_SIGNAL_RUN_LAST,
+		 G_STRUCT_OFFSET(AgsLineMemberClass, change_port),
+		 NULL, NULL,
+		 g_cclosure_marshal_VOID__POINTER,
+		 G_TYPE_NONE, 1,
+		 G_TYPE_POINTER);
 }
 
 void
@@ -172,6 +219,7 @@ ags_line_member_init(AgsLineMember *line_member)
   line_member->flags = AGS_LINE_MEMBER_RESET_BY_ATOMIC;
 
   line_member->widget_type = AGS_TYPE_DIAL;
+  line_member->widget_label = NULL;
 
   line_member->plugin_name = NULL;
   line_member->specifier = NULL;
@@ -180,6 +228,7 @@ ags_line_member_init(AgsLineMember *line_member)
 
   line_member->port = NULL;
   line_member->port_data = NULL;
+  line_member->active = FALSE;
 
   line_member->task_type = G_TYPE_NONE;
 }
@@ -212,6 +261,7 @@ ags_line_member_set_property(GObject *gobject,
 	gtk_widget_destroy(child);
       }
 
+      line_member->widget_type = widget_type;
       new_child = (GtkWidget *) g_object_new(widget_type,
 					     NULL);
       gtk_container_add(GTK_CONTAINER(line_member),
@@ -219,28 +269,103 @@ ags_line_member_set_property(GObject *gobject,
 			
     }
     break;
+  case PROP_WIDGET_LABEL:
+    {
+      gchar *label;
+
+      label = g_value_get_string(value);
+
+      if(label == line_member->widget_label){
+	return;
+      }
+
+      ags_line_member_set_label(line_member, label);
+    }
+    break;
   case PROP_PLUGIN_NAME:
     {
+      gchar *plugin_name;
+
+      plugin_name = g_value_get_string(value);
+
+      if(plugin_name == line_member->plugin_name){
+	return;
+      }
+
+      line_member->plugin_name = plugin_name;
     }
     break;
   case PROP_SPECIFIER:
     {
+      gchar *specifier;
+
+      specifier = g_value_get_string(value);
+
+      if(specifier == line_member->specifier){
+	return;
+      }
+
+      line_member->specifier = g_strdup(specifier);
     }
     break;
   case PROP_CONTROL_PORT:
     {
+      gchar *control_port;
+
+      control_port = g_value_get_string(value);
+
+      if(control_port == line_member->control_port){
+	return;
+      }
+
+      line_member->control_port = control_port;
+    }
+    break;
+  case PROP_PORT:
+    {
+      AgsPort *port;
+
+      port = g_value_get_object(value);
+      
+      if(port == line_member->port){
+	return;
+      }
+      
+      if(line_member->port != NULL){
+	g_object_unref(line_member->port);
+      }
+
+      if(port != NULL){
+	g_object_ref(port);
+      }
+
+      line_member->port = port;
     }
     break;
   case PROP_PORT_DATA:
     {
-    }
-    break;
-  case PROP_PORT_DATA_LENGTH:
-    {
+      gpointer port_data;
+
+      port_data = g_value_get_pointer(value);
+
+      if(port_data == line_member->port_data){
+	return;
+      }
+
+      line_member->port_data = port_data;
     }
     break;
   case PROP_TASK_TYPE:
     {
+      GType type;
+
+      type = g_value_get_ulong(value);
+      
+      if(line_member->task_type == type){
+	return;
+      }
+      
+      line_member->task_type = type;
     }
     break;
   default:
@@ -255,13 +380,89 @@ ags_line_member_get_property(GObject *gobject,
 			     GValue *value,
 			     GParamSpec *param_spec)
 {
-  /* empty */
+  AgsLineMember *line_member;
+
+  line_member = AGS_LINE_MEMBER(gobject);
+
+  switch(prop_id){
+  case PROP_WIDGET_TYPE:
+    {
+      g_value_set_ulong(value, line_member->widget_type);
+    }
+    break;
+  case PROP_WIDGET_LABEL:
+    {
+      g_value_set_string(value, line_member->widget_label);
+    }
+    break;
+  case PROP_PLUGIN_NAME:
+    {
+      g_value_set_string(value, line_member->plugin_name);
+    }
+    break;
+  case PROP_SPECIFIER:
+    {
+      g_value_set_string(value, line_member->specifier);
+    }
+    break;
+  case PROP_CONTROL_PORT:
+    {
+      g_value_set_string(value, line_member->control_port);
+    }
+    break;
+  case PROP_PORT:
+    {
+      g_value_set_object(value, line_member->port);
+    }
+    break;
+  case PROP_PORT_DATA:
+    {
+      g_value_set_pointer(value, line_member->port_data);
+    }
+    break;
+  case PROP_TASK_TYPE:
+    {
+      g_value_set_ulong(value, line_member->task_type);
+    }
+    break;
+  default:
+    G_OBJECT_WARN_INVALID_PROPERTY_ID(gobject, prop_id, param_spec);
+    break;
+  }
 }
 
 void
 ags_line_member_connect(AgsConnectable *connectable)
 {
-  /* empty */
+  AgsLineMember *line_member;
+  GtkWidget *control;
+
+  line_member = AGS_LINE_MEMBER(connectable);
+
+  control = gtk_bin_get_child(GTK_BIN(line_member));
+
+  if(line_member->widget_type == AGS_TYPE_DIAL){
+    g_signal_connect(GTK_WIDGET(control), "value-changed\0",
+		     G_CALLBACK(ags_line_member_dial_changed_callback), line_member);
+  }else if(line_member->widget_type == GTK_TYPE_VSCALE){
+    g_signal_connect(GTK_WIDGET(control), "value-changed\0",
+		     G_CALLBACK(ags_line_member_vscale_changed_callback), line_member);
+  }else if(line_member->widget_type == GTK_TYPE_HSCALE){
+    g_signal_connect(GTK_WIDGET(control), "value-changed\0",
+		     G_CALLBACK(ags_line_member_hscale_changed_callback), line_member);
+  }else if(line_member->widget_type == GTK_TYPE_SPIN_BUTTON){
+    g_signal_connect(GTK_WIDGET(control), "value-changed\0",
+		     G_CALLBACK(ags_line_member_spin_button_changed_callback), line_member);
+  }else if(line_member->widget_type == GTK_TYPE_CHECK_BUTTON){
+    g_signal_connect(GTK_WIDGET(control), "clicked\0",
+		     G_CALLBACK(ags_line_member_check_button_clicked_callback), line_member);
+  }else if(line_member->widget_type == GTK_TYPE_TOGGLE_BUTTON){
+    g_signal_connect(GTK_WIDGET(control), "clicked\0",
+		     G_CALLBACK(ags_line_member_toggle_button_clicked_callback), line_member);
+  }else if(line_member->widget_type == GTK_TYPE_BUTTON){
+    g_signal_connect(GTK_WIDGET(control), "clicked\0",
+		     G_CALLBACK(ags_line_member_button_clicked_callback), line_member);
+  }
 }
 
 void
@@ -277,12 +478,88 @@ ags_line_member_finalize(GObject *gobject)
 }
 
 void
+ags_line_member_set_label(AgsLineMember *line_member,
+			  gchar *label)
+{
+  GtkWidget *child_widget;
+
+  if(g_type_is_a(line_member->widget_type, GTK_TYPE_BUTTON) ||
+     line_member->widget_type == GTK_TYPE_SPIN_BUTTON){
+    child_widget = gtk_bin_get_child(GTK_BIN(line_member));
+
+    g_object_set(G_OBJECT(child_widget),
+		 "label\0", label,
+		 NULL);
+  }else{
+    //TODO:JK: implement me
+  }
+
+
+  line_member->widget_label = label;
+}
+
+void
 ags_line_member_real_change_port(AgsLineMember *line_member,
 				 gpointer port_data)
 {
   if((AGS_LINE_MEMBER_RESET_BY_ATOMIC & (line_member->flags)) != 0){
-    g_atomic_pointer_set(&line_member->port,
-			 port_data);
+    AgsPort *port;
+    GValue value = {0,};
+
+    port = line_member->port;
+
+    if(!port->port_value_is_pointer){
+      if(port->port_value_type == G_TYPE_BOOLEAN){
+	g_value_init(&value,
+		     G_TYPE_BOOLEAN);
+
+	g_value_set_boolean(&value,
+			    ((gboolean *) port_data)[0]);
+      }else if(port->port_value_type == G_TYPE_INT64){
+	g_value_init(&value,
+		     G_TYPE_INT64);
+	g_value_set_int64(&value,
+			  ((gint *) port_data)[0]);
+      }else if(port->port_value_type == G_TYPE_UINT64){
+	g_value_init(&value,
+		     G_TYPE_UINT64);
+
+	g_value_set_uint64(&value,
+			   ((guint *) port_data)[0]);
+      }else if(port->port_value_type == G_TYPE_DOUBLE){
+	g_value_init(&value,
+		     G_TYPE_DOUBLE);
+
+	g_value_set_double(&value,
+			   ((gdouble *) port_data)[0]);
+      }
+    }else{
+      if(port->port_value_type == G_TYPE_BOOLEAN){
+	g_value_init(&value,
+		     G_TYPE_BOOLEAN);
+      }else if(port->port_value_type == G_TYPE_INT64){
+	g_value_init(&value,
+		     G_TYPE_INT64);
+      }else if(port->port_value_type == G_TYPE_UINT64){
+	g_value_init(&value,
+		     G_TYPE_UINT64);
+      }else if(port->port_value_type == G_TYPE_DOUBLE){
+	g_value_init(&value,
+		     G_TYPE_DOUBLE);
+      }else if(port->port_value_type == G_TYPE_POINTER){
+	g_value_init(&value,
+		     G_TYPE_POINTER);
+      }else if(port->port_value_type == G_TYPE_OBJECT){
+	g_value_init(&value,
+		     G_TYPE_OBJECT);
+      }
+
+      g_value_set_pointer(&value,
+			  port_data);
+    }
+
+    ags_port_safe_write(line_member->port,
+			&value);
   }
 
   if((AGS_LINE_MEMBER_RESET_BY_TASK & (line_member->flags)) != 0){
@@ -302,15 +579,111 @@ ags_line_member_real_change_port(AgsLineMember *line_member,
     ags_task_thread_append_task(task_thread,
 				task);
   }
-
-  line_member->port_data = port_data;
 }
 
 void
 ags_line_member_change_port(AgsLineMember *line_member,
 			    gpointer port_data)
 {
-  //TODO:JK: implement me
+  g_return_if_fail(AGS_IS_LINE_MEMBER(line_member));
+
+  g_object_ref((GObject *) line_member);
+  g_signal_emit(G_OBJECT(line_member),
+		line_member_signals[CHANGE_PORT], 0,
+		port_data);
+  g_object_unref((GObject *) line_member);
+}
+
+void
+ags_line_member_find_port(AgsLineMember *line_member)
+{
+  AgsMachine *machine;
+  AgsLine *line;
+  AgsAudio *audio;
+  AgsChannel *channel;
+  AgsPort *audio_port, *channel_port;
+  GList *recall;
+  gchar *specifier;
+
+  auto AgsPort* ags_line_member_find_specifier(GList *recall);
+
+  AgsPort* ags_line_member_find_specifier(GList *recall){
+    GList *port;
+    
+    while(recall != NULL){
+      port = AGS_RECALL(recall->data)->port;
+
+#ifdef AGS_DEBUG
+      g_message("search port in %s\0", G_OBJECT_TYPE_NAME(recall->data));
+#endif
+
+      while(port != NULL){
+	if(!g_strcasecmp(AGS_PORT(port->data)->specifier,
+			 specifier)){
+	  return(AGS_PORT(port->data));
+	}
+
+	port = port->next;
+      }
+
+      recall = recall->next;
+    }
+
+    return(NULL);
+  }
+
+
+  if(line_member == NULL){
+    return;
+  }
+
+  specifier = line_member->specifier;
+
+  if(!AGS_IS_LINE_MEMBER(line_member) || specifier == NULL){
+    return;
+  }
+
+  line = (AgsLine *) gtk_widget_get_ancestor(GTK_WIDGET(line_member),
+					     AGS_TYPE_LINE);
+
+  audio = AGS_AUDIO(line->channel->audio);
+
+  machine = AGS_MACHINE(audio->machine);
+
+  audio_port = NULL;
+  channel_port = NULL;
+  
+  /* search channels */
+  channel = line->channel;
+
+  recall = channel->play;
+  channel_port = ags_line_member_find_specifier(recall);
+
+  if(channel_port == NULL){
+    recall = channel->recall;
+    channel_port = ags_line_member_find_specifier(recall);
+  }
+ 
+  /* search audio */
+  if(channel_port == NULL){
+    recall = audio->play;
+    audio_port = ags_line_member_find_specifier(recall);
+
+    if(audio_port == NULL){
+      recall = audio->recall;
+      audio_port = ags_line_member_find_specifier(recall);
+    }
+  }
+
+  if(channel_port != NULL){
+    g_object_set(G_OBJECT(line_member),
+		 "port\0", channel_port,
+		 NULL);
+  }else if(audio_port != NULL){
+    g_object_set(G_OBJECT(line_member),
+		 "port\0", audio_port,
+		 NULL);
+  }
 }
 
 AgsLineMember*

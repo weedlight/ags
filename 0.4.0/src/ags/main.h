@@ -19,6 +19,9 @@
 #ifndef __AGS_MAIN_H__
 #define __AGS_MAIN_H__
 
+#define _GNU_SOURCE
+#define ALSA_PCM_NEW_HW_PARAMS_API
+
 #ifdef AGS_WITH_XMLRPC_C
 #include <xmlrpc-c/base.h>
 #include <xmlrpc-c/abyss.h>
@@ -33,6 +36,7 @@
 #include <ags/thread/ags_thread.h>
 #include <ags/thread/ags_thread_pool.h>
 #include <ags/server/ags_server.h>
+#include <ags/audio/ags_config.h>
 #include <ags/audio/ags_devout.h>
 #include <ags/X/ags_window.h>
 
@@ -43,11 +47,10 @@
 #define AGS_IS_MAIN_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_MAIN))
 #define AGS_MAIN_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS(obj, AGS_TYPE_MAIN, AgsMainClass))
 
-#define AGS_VERSION "0.4.0-beta\0"
-#define AGS_BUILD_ID "CEST 04-12-2013 03:07\0"
-#define AGS_EFFECTS_DEFAULT_VERSION "0.4.0-beta\0"
+#define AGS_VERSION "0.4.0\0"
+#define AGS_BUILD_ID "CEST 22-06-2014 03:07\0"
+#define AGS_EFFECTS_DEFAULT_VERSION "0.4.0\0"
 
-#define __AGS_DEBUG__
 #define AGS_PRIORITY (49)
 
 typedef struct _AgsMain AgsMain;
@@ -72,6 +75,7 @@ struct _AgsMain
 #endif
 
   AgsThread *main_loop;
+  AgsThread *autosave_thread;
   AgsThreadPool *thread_pool;
 
   AgsServer *server;
@@ -80,6 +84,7 @@ struct _AgsMain
 
   AgsWindow *window;
 
+  AgsConfig *config;
   AgsLog *log;
 };
 
@@ -90,7 +95,9 @@ struct _AgsMainClass
 
 GType ags_main_get_type();
 
-void ags_main_add_devout(AgsMain *main,
+void ags_main_load_config(AgsMain *ags_main);
+
+void ags_main_add_devout(AgsMain *ags_main,
 			 AgsDevout *devout);
 
 void ags_main_register_thread_type();
@@ -101,7 +108,7 @@ void ags_main_register_task_type();
 void ags_main_register_widget_type();
 void ags_main_register_machine_type();
 
-void ags_main_quit(AgsMain *main);
+void ags_main_quit(AgsMain *ags_main);
 
 AgsMain* ags_main_new();
 

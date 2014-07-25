@@ -15,11 +15,6 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
-#define __USE_UNIX98
-#include <sys/mman.h>
-
-#include <gtk/gtk.h>
-
 #include <ags/main.h>
 
 #include <ags-lib/object/ags_connectable.h>
@@ -30,6 +25,7 @@
 
 #include <ags/thread/ags_audio_loop.h>
 #include <ags/thread/ags_gui_thread.h>
+#include <ags/thread/ags_autosave_thread.h>
 #include <ags/thread/ags_single_thread.h>
 
 #include <ags/audio/ags_channel.h>
@@ -42,8 +38,13 @@
 
 #include <ags/audio/ags_synths.h>
 
+#include <sys/mman.h>
+
+#include <gtk/gtk.h>
 #include <libintl.h>
 #include <stdio.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <X11/Xlib.h>
 
@@ -58,8 +59,14 @@ void ags_main_finalize(GObject *gobject);
 
 void ags_colors_alloc();
 
+static void ags_signal_cleanup();
+void ags_signal_handler(int signr);
+
 static gpointer ags_main_parent_class = NULL;
 static sigset_t ags_wait_mask;
+
+static const gchar *ags_config_thread = AGS_CONFIG_THREAD;
+static const gchar *ags_config_devout = AGS_CONFIG_DEVOUT;
 
 extern void ags_thread_resume_handler(int sig);
 extern void ags_thread_suspend_handler(int sig);
@@ -71,6 +78,8 @@ extern GtkStyle *notebook_style;
 extern GtkStyle *ruler_style;
 extern GtkStyle *meter_style;
 extern GtkStyle *note_edit_style;
+
+struct sigaction ags_sigact;
 
 GType
 ags_main_get_type()
@@ -145,6 +154,7 @@ ags_main_init(AgsMain *ags_main)
   ags_colors_alloc();
 
   ags_main->main_loop = NULL;
+  ags_main->autosave_thread = NULL;
   ags_main->thread_pool = ags_thread_pool_new(NULL);
   ags_main->server = NULL;
   ags_main->devout = NULL;
@@ -163,6 +173,8 @@ ags_main_init(AgsMain *ags_main)
 
   sa.sa_handler = ags_thread_suspend_handler;
   sigaction(AGS_THREAD_SUSPEND_SIG, &sa, NULL);
+  
+  ags_main->config = ags_config_new();
 }
 
 void
@@ -438,6 +450,105 @@ ags_colors_alloc()
 }
 
 void
+ags_main_load_config(AgsMain *ags_main)
+{
+  AgsConfig *config;
+  GList *list;
+
+  auto void ags_main_load_config_thread(AgsThread *thread);
+  auto void ags_main_load_config_devout(AgsDevout *devout);
+
+  void ags_main_load_config_thread(AgsThread *thread){
+    gchar *model;
+    
+    model = ags_config_get(config,
+			   ags_config_devout,
+			   "model\0");
+    
+    if(model != NULL){
+      if(!strncmp(model,
+		  "single-threaded\0",
+		  16)){
+	//TODO:JK: implement me
+	
+      }else if(!strncmp(model,
+			"multi-threaded",
+			15)){
+	//TODO:JK: implement me
+      }else if(!strncmp(model,
+			"super-threaded",
+			15)){
+	//TODO:JK: implement me
+      }
+    }
+  }
+  void ags_main_load_config_devout(AgsDevout *devout){
+    gchar *alsa_handle;
+    guint samplerate;
+    guint buffer_size;
+    guint pcm_channels, dsp_channels;
+
+    alsa_handle = ags_config_get(config,
+				 ags_config_devout,
+				 "alsa-handle\0");
+
+    dsp_channels = strtoul(ags_config_get(config,
+					  ags_config_devout,
+					  "dsp-channels\0"),
+			   NULL,
+			   10);
+    
+    pcm_channels = strtoul(ags_config_get(config,
+					  ags_config_devout,
+					  "pcm-channels\0"),
+			   NULL,
+			   10);
+
+    samplerate = strtoul(ags_config_get(config,
+					ags_config_devout,
+					"samplerate\0"),
+			 NULL,
+			 10);
+
+    buffer_size = strtoul(ags_config_get(config,
+					 ags_config_devout,
+					 "buffer-size\0"),
+			  NULL,
+			  10);
+    
+    g_object_set(G_OBJECT(devout),
+		 "device\0", alsa_handle,
+		 "dsp-channels\0", dsp_channels,
+		 "pcm-channels\0", pcm_channels,
+		 "frequency\0", samplerate,
+		 "buffer-size\0", buffer_size,
+		 NULL);
+  }
+  
+  if(ags_main == NULL){
+    return;
+  }
+
+  config = ags_main->config;
+
+  if(config == NULL){
+    return;
+  }
+
+  /* thread */
+  ags_main_load_config_thread(ags_main->main_loop);
+
+  /* devout */
+  list = ags_main->devout;
+
+  while(list != NULL){
+    ags_main_load_config_devout(AGS_DEVOUT(list->data));
+
+    list = list->next;
+  }
+}
+
+void
 ags_main_add_devout(AgsMain *ags_main,
 		    AgsDevout *devout)
 {
@@ -483,6 +594,9 @@ ags_main_register_recall_type()
 
   ags_buffer_channel_get_type();
   ags_buffer_channel_run_get_type();
+
+  ags_play_notation_audio_get_type();
+  ags_play_notation_audio_run_get_type();
 }
 
 void
@@ -517,6 +631,10 @@ ags_main_register_machine_type()
   ags_matrix_get_type();
 
   ags_synth_get_type();
+  ags_synth_input_pad_get_type();
+  ags_synth_input_line_get_type();
+
+  ags_ffplayer_get_type();
 }
 
 void
@@ -553,6 +671,24 @@ ags_main_new()
   return(ags_main);
 }
 
+void
+ags_signal_handler(int signr)
+{
+  if(signr == SIGINT){
+    //TODO:JK: do backup
+    
+    exit(-1);
+  }else{
+    sigemptyset(&(ags_sigact.sa_mask));
+  }
+}
+
+static void
+ags_signal_cleanup()
+{
+  sigemptyset(&(ags_sigact.sa_mask));
+}
+
 int
 main(int argc, char **argv)
 {
@@ -561,19 +697,34 @@ main(int argc, char **argv)
   AgsWindow *window;
   AgsGuiThread *gui_thread;
   gchar *filename;
-  //  struct sched_param param;
+  struct sched_param param;
   const char *error;
   gboolean single_thread = FALSE;
   guint i;
 
+  atexit(ags_signal_cleanup);
+
+  /* Ignore interactive and job-control signals.  */
+  signal(SIGINT, SIG_IGN);
+  signal(SIGQUIT, SIG_IGN);
+  signal(SIGTSTP, SIG_IGN);
+  signal(SIGTTIN, SIG_IGN);
+  signal(SIGTTOU, SIG_IGN);
+  signal(SIGCHLD, SIG_IGN);
+
+  ags_sigact.sa_handler = ags_signal_handler;
+  sigemptyset(&ags_sigact.sa_mask);
+  ags_sigact.sa_flags = 0;
+  sigaction(SIGINT, &ags_sigact, (struct sigaction *) NULL);
+  sigaction(SA_RESTART, &ags_sigact, (struct sigaction *) NULL);
+
+  /**/
   LIBXML_TEST_VERSION;
 
   XInitThreads();
 
   g_thread_init(NULL);
   gdk_threads_init();
-
-  //  gdk_threads_enter();
 
   gtk_init(&argc, &argv);
   ipatch_init();
@@ -619,13 +770,13 @@ main(int argc, char **argv)
 
 
     /* Declare ourself as a real time task */
-    //    param.sched_priority = AGS_PRIORITY;
+    param.sched_priority = AGS_PRIORITY;
 
-    //    if(sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
-    //      perror("sched_setscheduler failed\0");
-    //    }
+    if(sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+      perror("sched_setscheduler failed\0");
+    }
 
-    //    mlockall(MCL_CURRENT | MCL_FUTURE);
+    mlockall(MCL_CURRENT | MCL_FUTURE);
 
     if((AGS_MAIN_SINGLE_THREAD & (ags_main->flags)) == 0){
 #ifdef AGS_WITH_XMLRPC_C
@@ -656,13 +807,27 @@ main(int argc, char **argv)
       /* AgsServer */
       ags_main->server = ags_server_new((GObject *) ags_main);
 
-      /* AgsAgs_MainLoop */
+      /* AgsMainLoop */
       ags_main->main_loop = AGS_MAIN_LOOP(ags_audio_loop_new((GObject *) devout, (GObject *) ags_main));
       g_object_ref(G_OBJECT(ags_main->main_loop));
 
       ags_connectable_connect(AGS_CONNECTABLE(ags_main->main_loop));
 
       ags_thread_start(ags_main->main_loop);
+
+      /* AgsAutosaveThread */
+      //TODO:JK: uncomment me
+      ags_main->autosave_thread = NULL;
+      //      ags_main->autosave_thread = ags_autosave_thread_new(devout, ags_main);
+      //      g_object_ref(G_OBJECT(ags_main->autosave_thread));
+
+      //      ags_connectable_connect(AGS_CONNECTABLE(ags_main->autosave_thread));
+
+      //      ags_thread_start(ags_main->autosave_thread);
+
+      //TODO:JK: buggy
+      //      ags_config_load_defaults(ags_main->config);
+      //      ags_main_load_config(ags_main);
     }else{
       AgsSingleThread *single_thread;
 
@@ -691,9 +856,21 @@ main(int argc, char **argv)
       g_object_ref(G_OBJECT(ags_main->main_loop));
     
       ags_thread_start((AgsThread *) single_thread);
+
+      /* AgsAutosaveThread */
+      //TODO:JK: uncomment me
+      ags_main->autosave_thread = NULL;
+      //      ags_main->autosave_thread = ags_autosave_thread_new(devout, ags_main);
+      //      g_object_ref(G_OBJECT(ags_main->autosave_thread));
+
+      //      ags_connectable_connect(AGS_CONNECTABLE(ags_main->autosave_thread));
+
+      //      ags_thread_start(ags_main->autosave_thread);
     }
 
-    //  gdk_threads_leave();
+    //TODO:JK: buggy
+    //    ags_config_load_defaults(ags_main->config);
+    //    ags_main_load_config(ags_main);
 
     if(!single_thread){
       /* join gui thread */

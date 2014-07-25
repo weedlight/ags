@@ -130,17 +130,19 @@ ags_panel_input_line_init(AgsPanelInputLine *panel_input_line)
 {
   AgsLineMember *line_member;
 
-  line_member = ags_line_member_new();
+  line_member = (AgsLineMember *) g_object_new(AGS_TYPE_LINE_MEMBER,
+					       "widget-type\0", GTK_TYPE_CHECK_BUTTON,
+					       "widget-label\0", g_strdup("mute\0"),
+					       "plugin-name\0", "ags-play\0",
+					       "specifier\0", "./muted[0]\0",
+					       "control-port\0", "1/1\0",
+					       NULL);
+
   line_member->flags |= AGS_LINE_MEMBER_DEFAULT_TEMPLATE;
-  line_member->widget_type = GTK_TYPE_CHECK_BUTTON;
   ags_expander_add(AGS_LINE(panel_input_line)->expander,
 		   GTK_WIDGET(line_member),
 		   0, 0,
 		   1, 1);
-
-  panel_input_line->mute = (GtkCheckButton *) gtk_check_button_new_with_label("mute\0");
-  gtk_container_add(GTK_CONTAINER(line_member),
-		    GTK_WIDGET(panel_input_line->mute));
 }
 
 void
@@ -193,8 +195,10 @@ ags_panel_input_line_set_channel(AgsLine *line, AgsChannel *channel)
 
   panel_input_line = AGS_PANEL_INPUT_LINE(line);
 
+#ifdef AGS_DEBUG
   g_message("ags_panel_input_line_set_channel - channel: %u\0",
 	    channel->line);
+#endif
 
   if(line->channel != NULL){
     line->flags &= (~AGS_LINE_MAPPED_RECALL);
@@ -203,6 +207,7 @@ ags_panel_input_line_set_channel(AgsLine *line, AgsChannel *channel)
   if(channel != NULL){
     if((AGS_LINE_PREMAPPED_RECALL & (line->flags)) == 0){
       ags_panel_input_line_map_recall(panel_input_line, 0);
+      ags_line_find_port(line);
     }
   }
 }
@@ -247,8 +252,15 @@ ags_panel_input_line_map_recall(AgsPanelInputLine *panel_input_line,
 
   while((list = ags_recall_template_find_type(list,
 					      AGS_TYPE_PLAY_CHANNEL)) != NULL){
+    GValue audio_channel_value = {0,};
 
-    AGS_PLAY_CHANNEL(list->data)->audio_channel->port_value.ags_port_uint = source->audio_channel;
+    play_channel = AGS_PLAY_CHANNEL(list->data);
+
+    g_value_init(&audio_channel_value, G_TYPE_UINT64);
+    g_value_set_uint64(&audio_channel_value,
+		       source->audio_channel);
+    ags_port_safe_write(play_channel->audio_channel,
+			&audio_channel_value);
 
     list = list->next;
   }

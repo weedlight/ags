@@ -32,12 +32,22 @@
 #define AGS_IS_NAVIGATION_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE ((class), AGS_TYPE_NAVIGATION))
 #define AGS_NAVIGATION_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_NAVIGATION, AgsNavigationClass))
 
+#define AGS_NAVIGATION_DEFAULT_TACT_STEP (1.0/16.0)
+#define AGS_NAVIGATION_SEEK_STEPS (1.0)
+#define AGS_NAVIGATION_REWIND_STEPS (4.0)
+
 typedef struct _AgsNavigation AgsNavigation;
 typedef struct _AgsNavigationClass AgsNavigationClass;
+
+typedef enum{
+  AGS_NAVIGATION_BLOCK_TACT   = 1,
+}AgsNavigationFlags;
 
 struct _AgsNavigation
 {
   GtkVBox vbox;
+
+  guint flags;
 
   AgsDevout *devout;
 
@@ -64,17 +74,25 @@ struct _AgsNavigation
   GtkSpinButton *loop_left_tact;
   GtkSpinButton *loop_right_tact;
 
-  GtkCheckButton *raster;
+  GtkCheckButton *scroll;
 };
 
 struct _AgsNavigationClass
 {
   GtkVBoxClass vbox;
+
+  void (*change_position)(AgsNavigation *navigation,
+			  gdouble tact);
 };
 
 GType ags_navigation_get_type(void);
 
 gchar* ags_navigation_tact_to_time_string(gdouble tact);
+void ags_navigation_update_time_string(double tact,
+				       gchar *time_string);
+
+void ags_navigation_change_position(AgsNavigation *navigation,
+				    gdouble tact);
 
 AgsNavigation* ags_navigation_new();
 

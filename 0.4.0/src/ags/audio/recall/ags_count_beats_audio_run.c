@@ -552,6 +552,14 @@ ags_count_beats_audio_run_connect_dynamic(AgsDynamicConnectable *dynamic_connect
   count_beats_audio_run->sequencer_count_handler =
     g_signal_connect(G_OBJECT(count_beats_audio_run->delay_audio_run), "sequencer-count\0",
 		     G_CALLBACK(ags_count_beats_audio_run_sequencer_count_callback), count_beats_audio_run);
+
+  count_beats_audio_run->notation_alloc_output_handler =
+    g_signal_connect(G_OBJECT(count_beats_audio_run->delay_audio_run), "notation-alloc-output\0",
+		     G_CALLBACK(ags_count_beats_audio_run_notation_alloc_output_callback), count_beats_audio_run);
+
+  count_beats_audio_run->notation_count_handler =
+    g_signal_connect(G_OBJECT(count_beats_audio_run->delay_audio_run), "notation-count\0",
+		     G_CALLBACK(ags_count_beats_audio_run_notation_count_callback), count_beats_audio_run);
 }
 
 void
@@ -566,6 +574,9 @@ ags_count_beats_audio_run_disconnect_dynamic(AgsDynamicConnectable *dynamic_conn
 
   g_signal_handler_disconnect(G_OBJECT(count_beats_audio_run), count_beats_audio_run->sequencer_alloc_output_handler);
   g_signal_handler_disconnect(G_OBJECT(count_beats_audio_run), count_beats_audio_run->sequencer_count_handler);
+
+  g_signal_handler_disconnect(G_OBJECT(count_beats_audio_run), count_beats_audio_run->notation_alloc_output_handler);
+  g_signal_handler_disconnect(G_OBJECT(count_beats_audio_run), count_beats_audio_run->notation_count_handler);
 }
 
 void
@@ -893,7 +904,7 @@ ags_count_beats_audio_run_notation_alloc_output_callback(AgsDelayAudioRun *delay
       //	g_message("ags_count_beats_audio_run_notation_alloc_output_callback: loop\n\0");
     }else{
       if((AGS_RECALL_PERSISTENT & (AGS_RECALL(count_beats_audio_run)->flags)) == 0){
-	//	g_message("ags_count_beats_audio_run_notation_alloc_output_callback: done\n\0");
+	// g_message("ags_count_beats_audio_run_notation_alloc_output_callback: done\n\0");
 
 	//TODO:JK: verify me
 	ags_count_beats_audio_run_notation_stop(count_beats_audio_run,
@@ -923,7 +934,7 @@ ags_count_beats_audio_run_sequencer_alloc_output_callback(AgsDelayAudioRun *dela
   loop = g_value_get_boolean(&value);
 
   if(count_beats_audio_run->first_run){
-    g_message("ags_count_beats_audio_run_sequencer_alloc_output_callback: start\n\0");
+    //    g_message("ags_count_beats_audio_run_sequencer_alloc_output_callback: start\n\0");
     ags_count_beats_audio_run_sequencer_start(count_beats_audio_run,
 					      run_order);
   }
@@ -932,14 +943,14 @@ ags_count_beats_audio_run_sequencer_alloc_output_callback(AgsDelayAudioRun *dela
      count_beats_audio_run->sequencer_counter == 0){
     /* emit sequencer signals */
     if(loop){
-      g_message("ags_count_beats_audio_run_sequencer_alloc_output_callback: loop\n\0");
+      //      g_message("ags_count_beats_audio_run_sequencer_alloc_output_callback: loop\n\0");
       
       ags_count_beats_audio_run_sequencer_loop(count_beats_audio_run,
 					       run_order);
     }else{
       /* emit stop signals */
       if((AGS_RECALL_PERSISTENT & (AGS_RECALL(count_beats_audio_run)->flags)) == 0){
-	g_message("ags_count_beats_audio_run_sequencer_alloc_output_callback: done\n\0");
+	//	g_message("ags_count_beats_audio_run_sequencer_alloc_output_callback: done\n\0");
 
 	ags_count_beats_audio_run_sequencer_stop(count_beats_audio_run,
 						 run_order);
@@ -970,6 +981,8 @@ ags_count_beats_audio_run_notation_count_callback(AgsDelayAudioRun *delay_audio_
   if(count_beats_audio_run->hide_ref != 0){
     count_beats_audio_run->notation_hide_ref_counter += 1;
   }
+
+  //  g_message("notation %d\0", count_beats_audio_run->notation_counter);
 
   /* 
    * Block counter for sequencer and notation counter
@@ -1082,7 +1095,8 @@ ags_count_beats_audio_run_write_resolve_dependency(AgsFileLookup *file_lookup,
   AgsFileIdRef *id_ref;
   gchar *id;
 
-  id_ref = (AgsFileIdRef *) ags_file_find_id_ref_by_reference(file_lookup->file, file_lookup->ref);
+  id_ref = (AgsFileIdRef *) ags_file_find_id_ref_by_reference(file_lookup->file,
+							      AGS_COUNT_BEATS_AUDIO_RUN(file_lookup->ref)->delay_audio_run);
 
   id = xmlGetProp(id_ref->node, AGS_FILE_ID_PROP);
 

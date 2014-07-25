@@ -162,7 +162,9 @@ ags_audio_file_disconnect(AgsConnectable *connectable)
 gboolean
 ags_audio_file_open(AgsAudioFile *audio_file)
 {
-  g_message("ags_audio_file_open: %s\n\0", audio_file->name);
+#ifdef AGS_DEBUG
+  g_message("ags_audio_file_open: %s\0", audio_file->name);
+#endif
 
   if(g_file_test(audio_file->name, G_FILE_TEST_EXISTS)){
     if(g_str_has_suffix(audio_file->name, ".wav\0") ||
@@ -171,7 +173,6 @@ ags_audio_file_open(AgsAudioFile *audio_file)
       GError *error;
       guint loop_start, loop_end;
 
-      g_message("ags_audio_file_open: using libsndfile\n\0");
       audio_file->file = (GObject *) ags_sndfile_new();
 
       if(ags_playable_open(AGS_PLAYABLE(audio_file->file),
@@ -200,6 +201,58 @@ ags_audio_file_open(AgsAudioFile *audio_file)
   }
 }
 
+gboolean
+ags_audio_file_open_from_data(AgsAudioFile *audio_file, gchar *data)
+{
+#ifdef AGS_DEBUG
+  g_message("ags_audio_file_open_from_data:\0");
+#endif
+
+  if(data != NULL){
+    if(g_str_has_suffix(audio_file->name, ".wav\0") ||
+       g_str_has_suffix(audio_file->name, ".ogg\0") ||
+       g_str_has_suffix(audio_file->name, ".flac\0")){
+      GError *error;
+      guint loop_start, loop_end;
+
+      audio_file->file = (GObject *) ags_sndfile_new();
+      AGS_SNDFILE(audio_file->file)->flags = AGS_SNDFILE_VIRTUAL;
+
+      if(ags_playable_open(AGS_PLAYABLE(audio_file->file),
+			   audio_file->name)){
+	AGS_SNDFILE(audio_file->file)->pointer = g_base64_decode(data,
+								 &(AGS_SNDFILE(audio_file->file)->length));
+	AGS_SNDFILE(audio_file->file)->current = AGS_SNDFILE(audio_file->file)->pointer;
+
+	error = NULL;
+
+	ags_playable_info(AGS_PLAYABLE(audio_file->file),
+			  &(audio_file->channels), &(audio_file->frames),
+			  &loop_start, &loop_end,
+			  &error);
+
+	if(error != NULL){
+	  g_error("%s\0", error->message);
+	}
+
+	return(TRUE);
+      }else{
+	return(FALSE);
+      }
+    }else{
+      g_message("ags_audio_file_open: unknown file type\n\0");
+      return(FALSE);
+    }
+  }
+}
+
+void
+ags_audio_file_close(AgsAudioFile *audio_file)
+{
+  ags_playable_close(AGS_PLAYABLE(audio_file->file));
+}
+
+
 void
 ags_audio_file_read_audio_signal(AgsAudioFile *audio_file)
 {
@@ -213,9 +266,24 @@ ags_audio_file_read_audio_signal(AgsAudioFile *audio_file)
 }
 
 void
-ags_audio_file_close(AgsAudioFile *audio_file)
+ags_audio_file_seek(AgsAudioFile *audio_file, guint frames, gint whence)
 {
-  ags_playable_close(AGS_PLAYABLE(audio_file->file));
+  ags_playable_seek(AGS_PLAYABLE(audio_file->file),
+		    frames, whence);
+}
+
+void
+ags_audio_file_write(AgsAudioFile *audio_file,
+		     signed short *buffer, guint buffer_size)
+{
+  ags_playable_write(AGS_PLAYABLE(audio_file->file),
+		     buffer, buffer_size);
+}
+
+void
+ags_audio_file_flush(AgsAudioFile *audio_file)
+{
+  ags_playable_flush(AGS_PLAYABLE(audio_file->file));
 }
 
 AgsAudioFile*
@@ -227,7 +295,7 @@ ags_audio_file_new(gchar *name,
 
   audio_file = (AgsAudioFile *) g_object_new(AGS_TYPE_AUDIO_FILE, NULL);
 
-  audio_file->name = name;
+  audio_file->name = g_strdup(name);
   audio_file->devout = devout;
   audio_file->start_channel = start_channel;
   audio_file->audio_channels = audio_channels;

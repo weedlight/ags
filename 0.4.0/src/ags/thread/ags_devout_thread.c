@@ -155,10 +155,11 @@ ags_devout_thread_start(AgsThread *thread)
   devout = AGS_DEVOUT(thread->devout);
 
   /*  */
-  if((AGS_THREAD_INITIAL_RUN & (thread->flags)) != 0){
+  if((AGS_THREAD_INITIAL_RUN & (g_atomic_int_get(&(thread->flags)))) != 0){
     pthread_mutex_lock(&(thread->start_mutex));
 
-    thread->flags &= (~AGS_THREAD_INITIAL_RUN);
+    g_atomic_int_and(&(thread->flags),
+		     (~AGS_THREAD_INITIAL_RUN));
     pthread_cond_broadcast(&(thread->start_cond));
 
     pthread_mutex_unlock(&(thread->start_mutex));
@@ -177,7 +178,9 @@ ags_devout_thread_start(AgsThread *thread)
       			   devout_thread->error);
       
       devout->flags &= (~AGS_DEVOUT_START_PLAY);
+#ifdef AGS_DEBUG
       g_message("ags_devout_alsa_play\0");
+#endif
     }
   }
 
@@ -196,7 +199,7 @@ ags_devout_thread_start(AgsThread *thread)
   memset(devout->buffer[2], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
   memset(devout->buffer[3], 0, devout->dsp_channels * devout->buffer_size * sizeof(signed short));
 
-  if((AGS_THREAD_SINGLE_LOOP & (thread->flags)) == 0){
+  if((AGS_THREAD_SINGLE_LOOP & (g_atomic_int_get(&(thread->flags)))) == 0){
     AGS_THREAD_CLASS(ags_devout_thread_parent_class)->start(thread);
   }
 }
@@ -206,11 +209,18 @@ ags_devout_thread_run(AgsThread *thread)
 {
   AgsDevout *devout;
   AgsDevoutThread *devout_thread;
+  long delay;
   GError *error;
 
   devout_thread = AGS_DEVOUT_THREAD(thread);
 
   devout = AGS_DEVOUT(thread->devout);
+
+  delay = (long) floor(NSEC_PER_SEC / devout->frequency * devout->buffer_size);
+
+  if((AGS_THREAD_INITIAL_RUN & (thread->flags)) != 0){
+    //    time(&(devout_thread->time_val));
+  }
 
   //  g_message("play\0");
 
@@ -220,6 +230,17 @@ ags_devout_thread_run(AgsThread *thread)
   
   if(error != NULL){
     //TODO:JK: implement me
+  }
+
+  if((AGS_DEVOUT_NONBLOCKING & (devout->flags)) != 0){
+    time_t new_time_val;
+    struct timespec sdelay;
+
+    sdelay.tv_sec = 0;
+    sdelay.tv_nsec = delay;
+    nanosleep(&sdelay, NULL);
+
+    //    time(&(devout_thread->time_val));
   }
 }
 
@@ -236,7 +257,9 @@ ags_devout_thread_stop(AgsThread *thread)
   audio_loop = AGS_AUDIO_LOOP(thread->parent);
 
   if((AGS_DEVOUT_START_PLAY & (devout->flags)) != 0){
+#ifdef AGS_DEBUG
     g_message("ags_devout_thread_stop:  just starting\n\0");
+#endif
     return;
   }
 

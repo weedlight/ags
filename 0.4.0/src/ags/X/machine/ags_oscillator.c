@@ -19,7 +19,16 @@
 #include <ags/X/machine/ags_oscillator.h>
 #include <ags/X/machine/ags_oscillator_callbacks.h>
 
+#include <ags/main.h>
+
 #include <ags-lib/object/ags_connectable.h>
+
+#include <ags/util/ags_id_generator.h>
+
+#include <ags/object/ags_plugin.h>
+
+#include <ags/file/ags_file_stock.h>
+#include <ags/file/ags_file_id_ref.h>
 
 void ags_oscillator_class_init(AgsOscillatorClass *oscillator);
 void ags_oscillator_connectable_interface_init(AgsConnectableInterface *connectable);
@@ -55,7 +64,7 @@ ags_oscillator_get_type(void)
       NULL, /* interface_data */
     };
     
-    ags_type_oscillator = g_type_register_static(GTK_TYPE_MENU_ITEM,
+    ags_type_oscillator = g_type_register_static(GTK_TYPE_FRAME,
 						 "AgsOscillator\0",
 						 &ags_oscillator_info,
 						 0);
@@ -94,18 +103,15 @@ ags_oscillator_init(AgsOscillator *oscillator)
   GtkListStore *model;
   GtkTreeIter iter;
 
-  oscillator->frame = (GtkFrame *) gtk_frame_new(NULL);
-  gtk_container_add((GtkContainer *) oscillator, (GtkWidget *) oscillator->frame);
-
   table = (GtkTable *) gtk_table_new(8, 2, FALSE);
-  gtk_container_add((GtkContainer *) oscillator->frame, (GtkWidget *) table);
+  gtk_container_add((GtkContainer *) oscillator, (GtkWidget *) table);
 
   gtk_table_attach_defaults(table,
 			    (GtkWidget *) gtk_label_new("wave\0"),
 			    0, 1, 0, 1);
 
   /* wave */
-  oscillator->wave = (GtkComboBox *) gtk_combo_box_new();
+  oscillator->wave = (GtkComboBox *) gtk_combo_box_text_new();
   gtk_table_attach_defaults(table,
 			    (GtkWidget *) oscillator->wave,
 			    1, 2, 0, 1);
@@ -235,6 +241,131 @@ ags_oscillator_destroy(GtkObject *object)
 void
 ags_oscillator_show(GtkWidget *widget)
 {
+}
+
+void
+ags_file_read_oscillator(AgsFile *file, xmlNode *node, AgsOscillator **oscillator)
+{
+  AgsOscillator *gobject;
+  xmlChar *wave;
+
+  if(*oscillator == NULL){
+    gobject = (AgsOscillator *) g_object_new(AGS_TYPE_OSCILLATOR,
+					     NULL);
+    *oscillator = gobject;
+  }else{
+    gobject = *oscillator;
+  }
+
+  ags_file_add_id_ref(file,
+		      g_object_new(AGS_TYPE_FILE_ID_REF,
+				   "main\0", file->ags_main,
+				   "file\0", file,
+				   "node\0", node,
+				   "xpath\0", g_strdup_printf("xpath=//*[@id='%s']\0", xmlGetProp(node, AGS_FILE_ID_PROP)),
+				   "reference\0", gobject,
+				   NULL));
+
+  wave = (xmlChar *) xmlGetProp(node,
+				"wave\0");
+
+  if(!xmlStrncmp(wave,
+		 "sin\0",
+		 4)){
+    gtk_combo_box_set_active(gobject->wave,
+			     0);
+  }else if(!xmlStrncmp(wave,
+		 "sawtooth\0",
+		 9)){
+    gtk_combo_box_set_active(gobject->wave,
+			     1);
+  }else if(!xmlStrncmp(wave,
+		 "square\0",
+		 7)){
+    gtk_combo_box_set_active(gobject->wave,
+			     2);
+  }else if(!xmlStrncmp(wave,
+		 "triangle\0",
+		 9)){
+    gtk_combo_box_set_active(gobject->wave,
+			     3);
+  }
+
+  gtk_spin_button_set_value(gobject->attack,
+			    g_ascii_strtod(xmlGetProp(node,
+						      "attack\0"),
+					   NULL));
+
+  gtk_spin_button_set_value(gobject->frame_count,
+			    g_ascii_strtod(xmlGetProp(node,
+						      "frame-count\0"),
+					   NULL));
+  
+  gtk_spin_button_set_value(gobject->frequency,
+			    g_ascii_strtod(xmlGetProp(node,
+						      "frequency\0"),
+					   NULL));
+
+  gtk_spin_button_set_value(gobject->phase,
+			    g_ascii_strtod(xmlGetProp(node,
+						      "phase\0"),
+					   NULL));
+  
+  gtk_spin_button_set_value(gobject->volume,
+			    g_ascii_strtod(xmlGetProp(node,
+						      "volume\0"),
+					   NULL));
+}
+
+xmlNode*
+ags_file_write_oscillator(AgsFile *file, xmlNode *parent, AgsOscillator *oscillator)
+{
+  xmlNode *node;
+  gchar *id;
+
+  id = ags_id_generator_create_uuid();
+  
+  node = xmlNewNode(NULL,
+		    "ags-oscillator\0");
+  xmlNewProp(node,
+	     AGS_FILE_ID_PROP,
+	     id);
+
+  ags_file_add_id_ref(file,
+		      g_object_new(AGS_TYPE_FILE_ID_REF,
+				   "main\0", file->ags_main,
+				   "file\0", file,
+				   "node\0", node,
+				   "xpath\0", g_strdup_printf("xpath=//*[@id='%s']\0", id),
+				   "reference\0", oscillator,
+				   NULL));
+
+  xmlNewProp(node,
+	     "wave\0",
+	     gtk_combo_box_text_get_active_text((GtkComboBoxText *) oscillator->wave));
+
+  xmlNewProp(node,
+	     "attack\0",
+	     g_strdup_printf("%f\0", oscillator->attack->adjustment->value));
+
+  xmlNewProp(node,
+	     "frame-count\0",
+	     g_strdup_printf("%f\0", oscillator->frame_count->adjustment->value));
+
+  xmlNewProp(node,
+	     "frequency\0",
+	     g_strdup_printf("%f\0", oscillator->frequency->adjustment->value));
+
+  xmlNewProp(node,
+	     "phase\0",
+	     g_strdup_printf("%f\0", oscillator->phase->adjustment->value));
+
+  xmlNewProp(node,
+	     "volume\0",
+	     g_strdup_printf("%f\0", oscillator->volume->adjustment->value));
+
+  xmlAddChild(parent,
+	      node);  
 }
 
 AgsOscillator*

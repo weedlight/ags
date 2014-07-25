@@ -26,14 +26,6 @@
 
 #include <math.h>
 
-gboolean
-ags_toolbar_destroy_callback(GtkObject *object, AgsToolbar *toolbar)
-{
-  ags_toolbar_destroy(object);
-
-  return(FALSE);
-}
-
 void
 ags_toolbar_show_callback(GtkWidget *widget, AgsToolbar *toolbar)
 {
@@ -151,8 +143,7 @@ ags_toolbar_copy_or_cut_callback(GtkWidget *widget, AgsToolbar *toolbar)
   /* add notation to root node */
   editor = AGS_EDITOR(gtk_widget_get_ancestor(GTK_WIDGET(toolbar), AGS_TYPE_EDITOR));
 
-  if(editor->selected != NULL &&
-     (machine = AGS_MACHINE(g_object_get_data((GObject *) editor->selected, (char *) g_type_name(AGS_TYPE_MACHINE)))) != NULL){
+  if((machine = editor->selected_machine) != NULL){
     /* create document */
     clipboard = xmlNewDoc(BAD_CAST XML_DEFAULT_VERSION);
 
@@ -254,8 +245,7 @@ ags_toolbar_paste_callback(GtkWidget *widget, AgsToolbar *toolbar)
   /* retrieve AgsEditor */
   editor = AGS_EDITOR(gtk_widget_get_ancestor(GTK_WIDGET(toolbar), AGS_TYPE_EDITOR));
 
-  if(editor->selected != NULL &&
-     (machine = AGS_MACHINE(g_object_get_data((GObject *) editor->selected, (char *) g_type_name(AGS_TYPE_MACHINE)))) != NULL){
+  if((machine = editor->selected_machine) != NULL){
     /* get clipboard */
     buffer = gtk_clipboard_wait_for_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
     
@@ -298,7 +288,7 @@ ags_toolbar_paste_callback(GtkWidget *widget, AgsToolbar *toolbar)
 }
 
 void
-ags_toolbar_zoom_callback(GtkOptionMenu *option, AgsToolbar *toolbar)
+ags_toolbar_zoom_callback(GtkComboBox *combo_box, AgsToolbar *toolbar)
 {
   AgsEditor *editor;
   GtkWidget *widget;
@@ -315,7 +305,7 @@ ags_toolbar_zoom_callback(GtkOptionMenu *option, AgsToolbar *toolbar)
 }
 
 void
-ags_toolbar_tact_callback(GtkOptionMenu *option, AgsToolbar *toolbar)
+ags_toolbar_tact_callback(GtkComboBox *combo_box, AgsToolbar *toolbar)
 {
   AgsEditor *editor;
   GtkWidget *widget;
@@ -326,7 +316,7 @@ ags_toolbar_tact_callback(GtkOptionMenu *option, AgsToolbar *toolbar)
   editor = (AgsEditor *) gtk_widget_get_ancestor((GtkWidget *) toolbar, AGS_TYPE_EDITOR);
   widget = (GtkWidget *) editor->note_edit->drawing_area;
 
-  history = gtk_option_menu_get_history(option);
+  history = gtk_combo_box_get_active(combo_box);
 
   tact = exp2((double) history - 4.0);
   tact_old = exp2((double) toolbar->tact_history - 4.0);

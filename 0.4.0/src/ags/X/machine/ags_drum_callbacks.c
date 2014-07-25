@@ -312,7 +312,7 @@ ags_drum_run_delay_done(AgsRecall *recall, AgsRecallID *recall_id, AgsDrum *drum
 }
 
 void
-ags_drum_tact_callback(GtkWidget *option_menu, AgsDrum *drum)
+ags_drum_tact_callback(GtkWidget *combo_box, AgsDrum *drum)
 {
   AgsWindow *window;
   AgsApplyTact *apply_tact;
@@ -320,7 +320,7 @@ ags_drum_tact_callback(GtkWidget *option_menu, AgsDrum *drum)
 
   window = (AgsWindow *) gtk_widget_get_toplevel(GTK_WIDGET(drum));
 
-  tact = exp2(4.0 - (double) gtk_option_menu_get_history((GtkOptionMenu *) drum->tact));
+  tact = exp2(4.0 - (double) gtk_combo_box_get_active(drum->tact));
 
   apply_tact = ags_apply_tact_new(G_OBJECT(AGS_MACHINE(drum)->audio),
 				  tact);
@@ -472,7 +472,10 @@ ags_drum_pad_callback(GtkWidget *toggle_button, AgsDrum *drum)
   }
 
   if((AGS_DRUM_BLOCK_PATTERN & (drum->flags)) != 0){
+#ifdef AGS_DEBUG
     g_message("AgsDrum pattern is blocked\n\0");
+#endif
+
     return;
   }
 

@@ -56,6 +56,10 @@ void ags_file_write_channel_resolve_link(AgsFileLookup *file_lookup,
 void ags_file_read_recall_container_resolve_parameter(AgsFileLookup *file_lookup,
 						      AgsRecallContainer *recall_container);
 
+void ags_file_read_recall_resolve_audio(AgsFileLookup *file_lookup,
+					AgsRecall *recall);
+void ags_file_read_recall_resolve_channel(AgsFileLookup *file_lookup,
+					  AgsRecall *recall);
 void ags_file_read_recall_resolve_port(AgsFileLookup *file_lookup,
 				       AgsRecall *recall);
 void ags_file_read_recall_resolve_parameter(AgsFileLookup *file_lookup,
@@ -344,7 +348,7 @@ ags_file_write_devout(AgsFile *file, xmlNode *parent, AgsDevout *devout)
   /*  */  
   xmlNewProp(node,
 	     "delay-counter\0",
-	     g_strdup_printf("%f\0", devout->delay_counter));
+	     g_strdup_printf("%ull\0", devout->delay_counter));
 
   xmlNewProp(node,
 	     "device\0",
@@ -692,8 +696,6 @@ ags_file_read_audio(AgsFile *file, xmlNode *node, AgsAudio **audio)
 					  pad * gobject->audio_channels + audio_channel);
 
 		/* ags-channel output */
-		g_message("read out\0");
-
 		ags_file_read_channel(file,
 				      channel_node,
 				      &channel);
@@ -728,8 +730,6 @@ ags_file_read_audio(AgsFile *file, xmlNode *node, AgsAudio **audio)
 					  pad * gobject->audio_channels + audio_channel);
 
 		/* ags-channel input */
-		g_message("read in\0");
-
 		ags_file_read_channel(file,
 				      channel_node,
 				      &channel);
@@ -1140,8 +1140,7 @@ ags_file_read_channel(AgsFile *file, xmlNode *node, AgsChannel **channel)
       }else if(!xmlStrncmp(child->name,
 			   "ags-recall-list\0",
 			   15)){
-	AgsChannel *destination;
-	GList *start, *list;
+	GList *list;
 
 	if(!xmlStrncmp(xmlGetProp(child, "is-play\0"),
 		       AGS_FILE_TRUE,
@@ -1151,49 +1150,27 @@ ags_file_read_channel(AgsFile *file, xmlNode *node, AgsChannel **channel)
 				    child,
 				    &(gobject->play));
 
-	  start = gobject->play;
+	  list = gobject->play;
 	}else{
 	  /* ags-recall-list recall */
 	  ags_file_read_recall_list(file,
 				    child,
 				    &(gobject->recall));
 
-	  start = gobject->recall;
-	}
-
-	list = start;
-
-	//FIXME:JK: should rather be resolved
-	if(AGS_IS_INPUT(gobject)){
-	  if((AGS_AUDIO_ASYNC & (AGS_AUDIO(gobject->audio)->flags)) != 0){
-	    destination = ags_channel_nth(AGS_AUDIO(gobject->audio)->output,
-					  gobject->audio_channel);
-	  }else{
-	    destination = ags_channel_nth(AGS_AUDIO(gobject->audio)->output,
-					  gobject->line);
-	  }
-	}else{
-	  destination == NULL;
+	  list = gobject->recall;
 	}
 
 	while(list != NULL){
-	  if(destination == NULL){
-	    g_object_set(G_OBJECT(list->data),
-			 "source\0", gobject,
-			 NULL);
-	  }else{
-	    g_object_set(G_OBJECT(list->data),
-			 "source\0", gobject,
-			 "destination\0", destination,
-			 NULL);
-	  }
+	  g_object_set(G_OBJECT(list->data),
+		       "source\0", gobject,
+		       NULL);
 
 	  list = list->next;
 	}
       }else if(!xmlStrncmp(child->name,
 			   "ags-pattern-list\0",
 			   17)){
-	/* ags-notation-list */
+	/* ags-pattern-list */
 	ags_file_read_pattern_list(file,
 				    child,
 				    &(gobject->pattern));
@@ -1504,7 +1481,7 @@ ags_file_read_input(AgsFile *file, xmlNode *node, AgsChannel *channel)
 		     13)){
 	ags_file_read_file_link(file,
 				child,
-				(AgsFileLink *) &input->file_link);
+				(AgsFileLink *) &(input->file_link));
       }
     }
 
@@ -1544,7 +1521,7 @@ ags_file_write_input(AgsFile *file, xmlNode *parent, AgsChannel *channel)
   if(input->file_link != NULL){
     ags_file_write_file_link(file,
 			     node,
-			     AGS_FILE_LINK(input->file_link));
+			     input->file_link);
   }
 
   return(node);
@@ -1663,6 +1640,32 @@ ags_file_read_recall(AgsFile *file, xmlNode *node, AgsRecall **recall)
   g_signal_connect(G_OBJECT(file_lookup), "resolve\0",
 		   G_CALLBACK(ags_file_read_recall_resolve_devout), gobject);
 
+  /* audio */
+  if(AGS_IS_RECALL_AUDIO(gobject) ||
+     AGS_IS_RECALL_AUDIO_RUN(gobject)){
+    file_lookup = (AgsFileLookup *) g_object_new(AGS_TYPE_FILE_LOOKUP,
+						 "file\0", file,
+						 "node\0", node,
+						 "reference\0", gobject,
+						 NULL);
+    ags_file_add_lookup(file, (GObject *) file_lookup);
+    g_signal_connect(G_OBJECT(file_lookup), "resolve\0",
+		     G_CALLBACK(ags_file_read_recall_resolve_audio), gobject);
+  }
+
+  /* source and destination */
+  if(AGS_IS_RECALL_CHANNEL(gobject) ||
+     AGS_IS_RECALL_CHANNEL_RUN(gobject)){
+    file_lookup = (AgsFileLookup *) g_object_new(AGS_TYPE_FILE_LOOKUP,
+						 "file\0", file,
+						 "node\0", node,
+						 "reference\0", gobject,
+						 NULL);
+    ags_file_add_lookup(file, (GObject *) file_lookup);
+    g_signal_connect(G_OBJECT(file_lookup), "resolve\0",
+		     G_CALLBACK(ags_file_read_recall_resolve_channel), gobject);
+  }
+
   /*  */
   gobject->effect = (gchar *) xmlGetProp(node,
 					 "effect\0");
@@ -1734,14 +1737,9 @@ ags_file_read_recall(AgsFile *file, xmlNode *node, AgsRecall **recall)
       }else if(!xmlStrncmp(child->name,
 			   "ags-port-list\0",
 			   14)){
-	GList *start;
-
-	start = NULL;
-
 	ags_file_read_port_list(file,
 				child,
-				&start);
-
+				&(gobject->port));
       }else if(!xmlStrncmp(child->name,
 			   "ags-parameter\0",
 			   13)){
@@ -1753,6 +1751,62 @@ ags_file_read_recall(AgsFile *file, xmlNode *node, AgsRecall **recall)
 
     child = child->next;
   }
+}
+
+void
+ags_file_read_recall_resolve_audio(AgsFileLookup *file_lookup,
+				   AgsRecall *recall)
+{
+  AgsAudio *audio;
+  AgsFileIdRef *file_id_ref;
+  xmlNode *node;
+
+  audio = NULL;
+
+  node = file_lookup->node->parent->parent;
+  file_id_ref = ags_file_find_id_ref_by_node(file_lookup->file,
+					     node);
+
+  if(file_id_ref != NULL){
+    audio = (AgsAudio *) file_id_ref->ref;
+  }
+
+  g_object_set(G_OBJECT(recall),
+	       "audio\0", audio,
+	       NULL);
+}
+
+void
+ags_file_read_recall_resolve_channel(AgsFileLookup *file_lookup,
+				     AgsRecall *recall)
+{
+  AgsChannel *source, *destination;
+  AgsFileIdRef *file_id_ref;
+  xmlNode *node;
+    
+  source = NULL;
+  destination = NULL;
+
+  node = file_lookup->node->parent->parent;
+  file_id_ref = ags_file_find_id_ref_by_node(file_lookup->file,
+					     node);
+
+  if(file_id_ref != NULL){
+    source = AGS_CHANNEL(file_id_ref->ref);
+
+    if((AGS_AUDIO_ASYNC & (AGS_AUDIO(source->audio)->flags)) != 0){
+      destination = ags_channel_nth(AGS_AUDIO(source->audio)->output,
+				    source->audio_channel);
+    }else{
+      destination = ags_channel_nth(AGS_AUDIO(source->audio)->output,
+				    source->line);
+    }
+  }
+
+  g_object_set(G_OBJECT(recall),
+	       "source\0", source,
+	       "destination\0", destination,
+	       NULL);
 }
 
 void
@@ -2064,6 +2118,7 @@ ags_file_read_recall_container(AgsFile *file, xmlNode *node, AgsRecallContainer 
 	      }
 	    }
 	  }
+
 	  value_node = value_node->next;
 	}
       }
@@ -2085,7 +2140,7 @@ ags_file_read_recall_container_resolve_parameter(AgsFileLookup *file_lookup,
   if(G_VALUE_HOLDS(value, G_TYPE_OBJECT)){
     gobject = g_value_get_object(value);
 
-    if(AGS_RECALL(gobject)->container == recall_container){
+    if(gobject == NULL || AGS_RECALL(gobject)->container == recall_container){
       return;
     }
 
@@ -2966,7 +3021,12 @@ ags_file_read_port_list(AgsFile *file, xmlNode *node, GList **port)
   xmlNode *child;
   GList *list, *iter;
 
-  list = NULL;
+  if(*port != NULL){
+    list = *port;
+  }else{
+    list = NULL;
+  }
+
   child = node->children;
 
   while(child != NULL){
@@ -2974,20 +3034,41 @@ ags_file_read_port_list(AgsFile *file, xmlNode *node, GList **port)
       if(!xmlStrncmp(child->name,
 		     "ags-port\0",
 		     9)){
-	current = NULL;
+
+	if(*port != NULL){
+	  GList *list;
+
+	  list = ags_port_find_specifier(*port,
+					 xmlGetProp(child, "specifier\0"));
+
+	  if(list == NULL){
+	    child = child->next;
+
+	    continue;
+	  }else{
+	    current = list->data;
+	  }
+	}else{
+	  current = NULL;
+	}
+
 	ags_file_read_port(file,
 			   child,
 			   &current);
     
-	list = g_list_prepend(list,
-			      current);
+	if(*port == NULL){
+	  list = g_list_prepend(list,
+				current);
+	}
       }
     }
     
     child = child->next;
   }
 
-  list = g_list_reverse(list);
+  if(*port == NULL){
+    list = g_list_reverse(list);
+  }
 
   /* connect resolve */
   iter = list;
@@ -3866,29 +3947,43 @@ ags_file_read_pattern_list(AgsFile *file, xmlNode *node, GList **pattern)
 
   child = node->children;
 
-  list = NULL;
+  if(*pattern == NULL){
+    list = NULL;
+  }else{
+    list = *pattern;
+  }
 
   while(child != NULL){
     if(child->type == XML_ELEMENT_NODE){
       if(!xmlStrncmp(child->name,
 		     "ags-pattern\0",
 		     12)){
-	current = NULL;
+	if(*pattern == NULL){
+	  current = NULL;
+	}else{
+	  current = list->data;
+	}
 
 	ags_file_read_pattern(file, child,
 			      &current);
     
-	list = g_list_prepend(list,
-			      current);
+	if(*pattern == NULL){
+	  list = g_list_prepend(list,
+				current);
+	}else{
+	  list = list->next;
+	}
       }
     }
     
     child = child->next;
   }
 
-  list = g_list_reverse(list);
-
-  *pattern = list;
+  if(*pattern == NULL){
+    list = g_list_reverse(list);
+    
+    *pattern = list;
+  }
 
   ags_file_add_id_ref(file,
 		      g_object_new(AGS_TYPE_FILE_ID_REF,
@@ -3960,29 +4055,32 @@ ags_file_read_pattern_data(AgsFile *file, xmlNode *node,
 				   NULL));
 
   if(i != NULL){
-    *i = g_ascii_strtoull(xmlGetProp(node,
-				     "index-1st-level\0"),
-			  NULL,
-			  10);
+    *i = (guint) g_ascii_strtoull(xmlGetProp(node,
+					     "index-1st-level\0"),
+				  NULL,
+				  10);
   }
 
   if(j != NULL){
-    *j = g_ascii_strtoull(xmlGetProp(node,
-				     "index-2nd-level\0"),
-			  NULL,
-			  10);
+    *j = (guint) g_ascii_strtoull(xmlGetProp(node,
+					     "index-2nd-level\0"),
+				  NULL,
+				  10);
   }
 
   content = xmlNodeGetContent(node);
-
   coding = xmlGetProp(node,
 		      "coding\0");
+
+  g_message("pattern='%s'", content);
 
   if(!xmlStrncmp(coding,
 		 "human readable\0",
 		 14)){
     for(k = 0; k < length; k++){
-      if(content[k] == '1'){
+      if(!g_strncasecmp(&(content[k]),
+			"1\0",
+			1)){
 	ags_pattern_toggle_bit(pattern, *i, *j, k);
       }
     }

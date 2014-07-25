@@ -17,6 +17,7 @@
  */
 
 #include <ags/thread/ags_gui_thread.h>
+#include <ags/thread/ags_gui_task_thread.h>
 
 #include <ags-lib/object/ags_connectable.h>
 
@@ -130,6 +131,11 @@ ags_gui_thread_init(AgsGuiThread *gui_thread)
   gui_thread->iter = 0;
   gui_thread->iter_stop = 1;
   gui_thread->iter_stop_is_delay = TRUE;
+
+  gui_thread->gui_task_thread = NULL;
+  //  gui_thread->gui_task_thread = ags_gui_task_thread_new(NULL);
+  //  ags_thread_add_child(gui_thread,
+  //		       gui_thread->gui_task_thread);
 }
 
 void
@@ -167,8 +173,10 @@ ags_gui_thread_start(AgsThread *thread)
   gui_thread->iter = 0.0;
 
   /*  */
-  if((AGS_THREAD_SINGLE_LOOP & (thread->flags)) == 0){
+  if((AGS_THREAD_SINGLE_LOOP & (g_atomic_int_get(&(thread->flags)))) == 0){
     AGS_THREAD_CLASS(ags_gui_thread_parent_class)->start(thread);
+
+    //    ags_thread_start(gui_thread->gui_task_thread);
   }
 }
 
@@ -190,16 +198,17 @@ ags_gui_thread_run(AgsThread *thread)
 
       while(!got_ownership){
 	got_ownership = g_main_context_wait(main_context,
-					    &gui_thread->cond,
-					    &gui_thread->mutex);
+					    &(gui_thread->cond),
+					    &(gui_thread->mutex));
       }
     }
 
     /*  */
-    success = pthread_mutex_trylock(&(thread->suspend_mutex));
-
+    //    success = pthread_mutex_trylock(&(thread->suspend_mutex));
+    success = FALSE;
+    
     if(success){
-      g_atomic_int_set(&thread->critical_region,
+      g_atomic_int_set(&(thread->critical_region),
 		       TRUE);
     }
 
@@ -209,8 +218,8 @@ ags_gui_thread_run(AgsThread *thread)
       /*  */
       pthread_mutex_unlock(&(thread->suspend_mutex));
     }else{
-      g_atomic_int_set(&(thread->critical_region),
-		       TRUE);
+      //      g_atomic_int_set(&(thread->critical_region),
+      //	       TRUE);
     }
 
     /*  */
@@ -220,17 +229,18 @@ ags_gui_thread_run(AgsThread *thread)
     g_main_context_iteration(main_context, FALSE);
 
     /*  */
-    success = pthread_mutex_trylock(&(thread->suspend_mutex));
+    //    success = pthread_mutex_trylock(&(thread->suspend_mutex));
       
     /*  */
     pthread_mutex_unlock(&(task_thread->launch_mutex));
 
     /*  */
-    g_atomic_int_set(&(thread->critical_region),
-		     FALSE);
+    //    g_atomic_int_set(&(thread->critical_region),
+    //		     FALSE);
 
-    if(success)
+    if(success){
       pthread_mutex_unlock(&(thread->suspend_mutex));
+    }
 
     g_main_context_release(main_context);
   }

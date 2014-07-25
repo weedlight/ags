@@ -32,6 +32,11 @@
 #define AGS_IS_MATRIX_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_MATRIX))
 #define AGS_MATRIX_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_MATRIX, AgsMatrixClass))
 
+#define AGS_MATRIX_OCTAVE 10
+
+#define AGS_MATRIX_CELL_WIDTH   12
+#define AGS_MATRIX_CELL_HEIGHT  10
+
 typedef struct _AgsMatrix AgsMatrix;
 typedef struct _AgsMatrixClass AgsMatrixClass;
 
@@ -40,6 +45,9 @@ struct _AgsMatrix
   AgsMachine machine;
 
   guint flags;
+
+  gchar *name;
+  gchar *xml_type;
 
   guint mapped_output_pad;
   guint mapped_input_pad;
@@ -57,7 +65,7 @@ struct _AgsMatrix
   GtkAdjustment *adjustment;
 
   GtkSpinButton *length_spin;
-  GtkOptionMenu *tact;
+  GtkComboBox *tact;
   GtkCheckButton *loop_button;
 };
 

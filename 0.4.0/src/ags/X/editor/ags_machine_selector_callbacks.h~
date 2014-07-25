@@ -1,0 +1,4 @@
+#ifndef __AGS_MACHINE_SELECTOR_CALLBACKS_H__
+#define __AGS_MACHINE_SELECTOR_CALLBACKS_H__
+
+void ags_machine_selector_popup_add_tab_callback(GtkWidget *menu_item, AgsMachineSelector *machine_selector);

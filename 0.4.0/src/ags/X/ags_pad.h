@@ -36,8 +36,8 @@
 #define AGS_IS_PAD_CLASS(class)     (G_TYPE_CHECK_CLASS_TYPE((class), AGS_TYPE_PAD))
 #define AGS_PAD_GET_CLASS(obj)      (G_TYPE_INSTANCE_GET_CLASS((obj), AGS_TYPE_PAD, AgsPadClass))
 
-#define AGS_PAD_DEFAULT_VERSION "0.4.0-beta\0"
-#define AGS_PAD_DEFAULT_BUILD_ID "0.4.0\0"
+#define AGS_PAD_DEFAULT_VERSION "0.4.0\0"
+#define AGS_PAD_DEFAULT_BUILD_ID "CEST 22-06-2014 03:07\0"
 
 typedef struct _AgsPad AgsPad;
 typedef struct _AgsPadClass AgsPadClass;
@@ -54,6 +54,8 @@ struct _AgsPad
   GtkVBox vbox;
 
   guint flags;
+
+  gchar *name;
 
   gchar *version;
   gchar *build_id;
@@ -84,6 +86,8 @@ void ags_pad_set_channel(AgsPad *pad, AgsChannel *channel);
 
 void ags_pad_resize_lines(AgsPad *pad, GType line_type,
 			  guint audio_channels, guint audio_channels_old);
+
+void ags_pad_find_port(AgsPad *pad);
 
 AgsPad* ags_pad_new(AgsChannel *channel);
 

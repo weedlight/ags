@@ -1,0 +1,5 @@
+#ifndef __AGS_ASYNC_QUEUE_H__
+#define __AGS_ASYNC_QUEUE_H__
+
+
+#endif /*__AGS_ASYNC_QUEUE_H__*/

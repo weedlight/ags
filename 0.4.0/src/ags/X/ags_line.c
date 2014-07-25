@@ -29,6 +29,8 @@
 
 #include <ags/audio/ags_channel.h>
 
+#include <ags/X/ags_line_member.h>
+
 void ags_line_class_init(AgsLineClass *line);
 void ags_line_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_line_plugin_interface_init(AgsPluginInterface *plugin);
@@ -43,17 +45,10 @@ void ags_line_get_property(GObject *gobject,
 			   GParamSpec *param_spec);
 void ags_line_connect(AgsConnectable *connectable);
 void ags_line_disconnect(AgsConnectable *connectable);
-gchar* ags_line_get_name(AgsPlugin *plugin);
-void ags_line_set_name(AgsPlugin *plugin, gchar *name);
 gchar* ags_line_get_version(AgsPlugin *plugin);
 void ags_line_set_version(AgsPlugin *plugin, gchar *version);
 gchar* ags_line_get_build_id(AgsPlugin *plugin);
 void ags_line_set_build_id(AgsPlugin *plugin, gchar *build_id);
-gchar* ags_line_get_xml_type(AgsPlugin *plugin);
-void ags_line_set_xml_type(AgsPlugin *plugin, gchar *xml_type);
-GList* ags_line_get_ports(AgsPlugin *plugin);
-void ags_line_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
-xmlNode* ags_line_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 
 void ags_line_real_set_channel(AgsLine *line, AgsChannel *channel);
 
@@ -188,17 +183,17 @@ ags_line_connectable_interface_init(AgsConnectableInterface *connectable)
 void
 ags_line_plugin_interface_init(AgsPluginInterface *plugin)
 {
-  plugin->get_name = ags_line_get_name;
-  plugin->set_name = ags_line_set_name;
+  plugin->get_name = NULL;
+  plugin->set_name = NULL;
   plugin->get_version = ags_line_get_version;
   plugin->set_version = ags_line_set_version;
   plugin->get_build_id = ags_line_get_build_id;
   plugin->set_build_id = ags_line_set_build_id;
-  plugin->get_xml_type = ags_line_get_xml_type;
-  plugin->set_xml_type = ags_line_set_xml_type;
-  plugin->get_ports = ags_line_get_ports;
-  plugin->read = ags_line_read;
-  plugin->write = ags_line_write;
+  plugin->get_xml_type = NULL;
+  plugin->set_xml_type = NULL;
+  plugin->get_ports = NULL;
+  plugin->read = NULL;
+  plugin->write = NULL;
   plugin->set_ports = NULL;
 }
 
@@ -311,6 +306,7 @@ void
 ags_line_connect(AgsConnectable *connectable)
 {
   AgsLine *line;
+  GList *list;
 
   line = AGS_LINE(connectable);
 
@@ -320,26 +316,22 @@ ags_line_connect(AgsConnectable *connectable)
 
   g_signal_connect_after((GObject *) line->group, "clicked\0",
 			 G_CALLBACK(ags_line_group_clicked_callback), (gpointer) line);
+
+  /* connect line members */
+  list = gtk_container_get_children(GTK_CONTAINER(line->expander->table));
   
+  while(list != NULL){
+    ags_connectable_connect(AGS_CONNECTABLE(list->data));
+
+    list = list->next;
+  }
+  
+  /*  */
   line->flags |= AGS_LINE_CONNECTED;
 }
 
 void
 ags_line_disconnect(AgsConnectable *connectable)
-{
-  //TODO:JK: implement me
-}
-
-gchar*
-ags_line_get_name(AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
-}
-
-void
-ags_line_set_name(AgsPlugin *plugin, gchar *name)
 {
   //TODO:JK: implement me
 }
@@ -353,7 +345,7 @@ ags_line_get_version(AgsPlugin *plugin)
 void
 ags_line_set_version(AgsPlugin *plugin, gchar *version)
 {
-  //TODO:JK: implement me
+  AGS_LINE(plugin)->version = version;
 }
 
 gchar*
@@ -365,43 +357,7 @@ ags_line_get_build_id(AgsPlugin *plugin)
 void
 ags_line_set_build_id(AgsPlugin *plugin, gchar *build_id)
 {
-  //TODO:JK: implement me
-}
-
-gchar*
-ags_line_get_xml_type(AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
-}
-
-void
-ags_line_set_xml_type(AgsPlugin *plugin, gchar *xml_type)
-{
-  //TODO:JK: implement me
-}
-
-GList*
-ags_line_get_ports(AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
-}
-
-void
-ags_line_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-}
-
-xmlNode*
-ags_line_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin)
-{
-  //TODO:JK: implement me
-
-  return(NULL);
+  AGS_LINE(plugin)->build_id = build_id;
 }
 
 void
@@ -423,6 +379,26 @@ ags_line_real_set_channel(AgsLine *line, AgsChannel *channel)
 
   /* set label */
   gtk_label_set_label(line->label, g_strdup_printf("line %d\0", channel->audio_channel));
+}
+
+void
+ags_line_find_port(AgsLine *line)
+{
+  GList *line_member;
+
+  if(line == NULL || line->expander == NULL){
+    return;
+  }
+
+  line_member = gtk_container_get_children(GTK_CONTAINER(line->expander->table));
+
+  while(line_member != NULL){
+    if(AGS_IS_LINE_MEMBER(line_member->data)){
+      ags_line_member_find_port(AGS_LINE_MEMBER(line_member->data));
+    }
+
+    line_member = line_member->next;
+  }
 }
 
 void

@@ -55,12 +55,13 @@ struct _AgsThreadPool
   pthread_mutex_t creation_mutex;
   pthread_cond_t creation_cond;
 
+  volatile guint n_threads;
   volatile guint newly_pulled;
   volatile guint queued;
 
   AgsThread *parent;
-  GList *returnable_thread;
-  GList *running_thread;
+  volatile GList *returnable_thread;
+  volatile GList *running_thread;
 
   pthread_mutex_t pull_mutex;
 

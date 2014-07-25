@@ -377,9 +377,9 @@ ags_port_safe_read(AgsPort *port, GValue *value)
     }else if(port->port_value_type == G_TYPE_DOUBLE){
       memcpy(data, port->port_value.ags_port_double_ptr, overall_size);
     }else if(port->port_value_type == G_TYPE_POINTER){
-      g_warning("ags_port_safe_read: not supported data type %s\0", g_type_name(port->port_value_type));
+      data = port->port_value.ags_port_pointer;
     }else if(port->port_value_type == G_TYPE_OBJECT){
-      g_warning("ags_port_safe_read: not supported data type %s\0", g_type_name(port->port_value_type));
+      data = port->port_value.ags_port_object;
     }
 
     g_value_set_pointer(value, data);
@@ -401,10 +401,10 @@ ags_port_safe_write(AgsPort *port, GValue *value)
   if(!port->port_value_is_pointer){
     if(port->port_value_type == G_TYPE_BOOLEAN){
       port->port_value.ags_port_boolean = g_value_get_boolean(value);
-    }else if(port->port_value_type == G_TYPE_INT){
-      port->port_value.ags_port_int = g_value_get_int(value);
-    }else if(port->port_value_type == G_TYPE_UINT){
-      port->port_value.ags_port_uint = g_value_get_uint(value);
+    }else if(port->port_value_type == G_TYPE_INT64){
+      port->port_value.ags_port_int = g_value_get_int64(value);
+    }else if(port->port_value_type == G_TYPE_UINT64){
+      port->port_value.ags_port_uint = g_value_get_uint64(value);
     }else if(port->port_value_type == G_TYPE_DOUBLE){
       port->port_value.ags_port_double = g_value_get_double(value);
     }
@@ -413,16 +413,16 @@ ags_port_safe_write(AgsPort *port, GValue *value)
 
     if(port->port_value_type == G_TYPE_BOOLEAN){
       memcpy(port->port_value.ags_port_boolean_ptr, data, overall_size);
-    }else if(port->port_value_type == G_TYPE_INT){
+    }else if(port->port_value_type == G_TYPE_INT64){
       memcpy(port->port_value.ags_port_int_ptr, data, overall_size);
-    }else if(port->port_value_type == G_TYPE_UINT){
+    }else if(port->port_value_type == G_TYPE_UINT64){
       memcpy(port->port_value.ags_port_uint_ptr, data, overall_size);
     }else if(port->port_value_type == G_TYPE_DOUBLE){
       memcpy(port->port_value.ags_port_double_ptr, data, overall_size);
     }else if(port->port_value_type == G_TYPE_POINTER){
-      g_warning("ags_port_safe_write: not supported data type %s\0", g_type_name(port->port_value_type));
+      port->port_value.ags_port_pointer = data;
     }else if(port->port_value_type == G_TYPE_OBJECT){
-      g_warning("ags_port_safe_write: not supported data type %s\0", g_type_name(port->port_value_type));
+      port->port_value.ags_port_object = data;
     }
   }
 
@@ -451,6 +451,21 @@ ags_port_safe_set_property(AgsPort *port, gchar *property_name, GValue *value)
 			value);
 
   pthread_mutex_unlock(&(port->mutex));
+}
+
+GList*
+ags_port_find_specifier(GList *port, gchar *specifier)
+{
+  while(port != NULL){
+    if(!g_strcmp0(AGS_PORT(port->data)->specifier,
+		  specifier)){
+      return(port);
+    }
+
+    port = port->next;
+  }
+
+  return(NULL);
 }
 
 AgsPort*

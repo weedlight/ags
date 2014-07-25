@@ -108,6 +108,9 @@ AgsRecall* ags_recall_real_duplicate(AgsRecall *reall,
 				     AgsRecallID *recall_id,
 				     guint *n_params, GParameter *parameter);
 
+void ags_recall_child_done(AgsRecall *child,
+			   AgsRecall *parent);
+
 enum{
   RESOLVE_DEPENDENCIES,
   RUN_INIT_PRE,
@@ -429,7 +432,7 @@ ags_recall_class_init(AgsRecallClass *recall)
 		 G_TYPE_UINT, G_TYPE_INT);
 
   recall_signals[CHILD_ADDED] =
-    g_signal_new("child_added\0",
+    g_signal_new("child-added\0",
 		 G_TYPE_FROM_CLASS (recall),
 		 G_SIGNAL_RUN_LAST,
 		 G_STRUCT_OFFSET (AgsRecallClass, child_added),
@@ -594,8 +597,6 @@ ags_recall_set_property(GObject *gobject,
 	  g_object_set(G_OBJECT(container),
 		       "recall_channel_run\0", recall,
 		       NULL);
-	}else{
-	  return;
 	}
       }
 
@@ -798,7 +799,9 @@ ags_recall_pack(AgsPackable *packable, GObject *container)
      (container != NULL && !AGS_IS_RECALL_CONTAINER(container)))
     return(TRUE);
 
+#ifdef AGS_DEBUG
   g_message("===== packing: %s\0", G_OBJECT_TYPE_NAME(recall));
+#endif
 
   return(FALSE);
 }
@@ -988,7 +991,9 @@ ags_recall_finalize(GObject *gobject)
 
   recall = AGS_RECALL(gobject);
 
-  //  g_message("finalize %s\n\0", G_OBJECT_TYPE_NAME(gobject));
+#ifdef AGS_DEBUG
+  g_message("finalize %s\n\0", G_OBJECT_TYPE_NAME(gobject));
+#endif
 
   if(recall->devout != NULL){
     g_object_unref(recall->devout);
@@ -1002,8 +1007,8 @@ ags_recall_finalize(GObject *gobject)
     ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(recall));
   }
 
-  if(recall->name != NULL)
-    g_free(recall->name);
+  //  if(recall->name != NULL)
+  //    g_free(recall->name);
 
   ags_list_free_and_unref_link(recall->dependencies);
 
@@ -1073,12 +1078,25 @@ ags_recall_resolve_dependencies(AgsRecall *recall)
 {
   g_return_if_fail(AGS_IS_RECALL(recall));
 
+#ifdef AGS_DEBUG
   g_message("resolving %s\0", G_OBJECT_TYPE_NAME(recall));
+#endif
   
   g_object_ref(G_OBJECT(recall));
   g_signal_emit(G_OBJECT(recall),
 		recall_signals[RESOLVE_DEPENDENCIES], 0);
   g_object_unref(G_OBJECT(recall));
+}
+
+void
+ags_recall_child_added(AgsRecall *parent, AgsRecall *child)
+{
+  g_return_if_fail(AGS_IS_RECALL(parent));
+  g_object_ref(G_OBJECT(parent));
+  g_signal_emit(G_OBJECT(parent),
+		recall_signals[CHILD_ADDED], 0,
+		child);
+  g_object_unref(G_OBJECT(parent));
 }
 
 void
@@ -1193,8 +1211,6 @@ ags_recall_real_run_pre(AgsRecall *recall)
 {
   GList *list;
 
-  //  g_message("ags_recall_real_run_pre: %s\0", G_OBJECT_TYPE_NAME(recall));
-
   list = recall->children;
 
   while(list != NULL){
@@ -1230,8 +1246,6 @@ ags_recall_real_run_inter(AgsRecall *recall)
 {
   GList *list;
 
-  //  g_message("ags_recall_real_run_inter: %s\0", G_OBJECT_TYPE_NAME(recall));
-
   list = recall->children;
 
   while(list != NULL){
@@ -1266,8 +1280,6 @@ void
 ags_recall_real_run_post(AgsRecall *recall)
 {
   GList *list, *list_next;
-
-  //  g_message("ags_recall_real_run_post: %s\0", G_OBJECT_TYPE_NAME(recall));
 
   list = recall->children;
 
@@ -1645,6 +1657,23 @@ ags_recall_get_dependencies(AgsRecall *recall)
 }
 
 /**
+ * ags_recall_remove_child:
+ * @parent an #AgsRecall
+ * @child an #AgsRecall
+ *
+ * An #AgsRecall may have children.
+ */
+void
+ags_recall_remove_child(AgsRecall *recall, AgsRecall *child)
+{
+  recall->children = g_list_remove(recall->children,
+				   child);
+
+  g_object_unref(recall);
+  g_object_unref(child);
+}
+
+/**
  * ags_recall_add_child:
  * @parent an #AgsRecall
  * @child an #AgsRecall
@@ -1698,9 +1727,16 @@ ags_recall_add_child(AgsRecall *parent, AgsRecall *child)
 		 "devout\0", parent->devout,
 		 "recall_id\0", parent->recall_id,
 		 NULL);
+    g_signal_connect(G_OBJECT(child), "done\0",
+		     G_CALLBACK(ags_recall_child_done), parent);
   }
   
   child->parent = parent;
+
+  if(parent != NULL){
+    ags_recall_child_added(parent,
+			   child);
+  }
 
   ags_connectable_connect(AGS_CONNECTABLE(child));
 
@@ -1883,13 +1919,17 @@ ags_recall_find_recycling_container(GList *recall_i, GObject *recycling_containe
 {
   AgsRecall *recall;
 
+#ifdef AGS_DEBUG
   g_message("ags_recall_find_recycling_container: recycling_container = %llx\n\0", recycling_container);
+#endif
 
   while(recall_i != NULL){
     recall = AGS_RECALL(recall_i->data);
 
     if(recall->recall_id != NULL)
+#ifdef AGS_DEBUG
       g_message("ags_recall_find_recycling_container: recall_id->recycling_contianer = %llx\n\0", (long long unsigned int) recall->recall_id->recycling_container);
+#endif
 
     if(recall->recall_id != NULL &&
        recall->recall_id->recycling_container == recycling_container){
@@ -2051,6 +2091,14 @@ ags_recall_remove_handler(AgsRecall *recall,
 {
   recall->handlers = g_list_remove(recall->handlers,
 				   recall_handler);
+}
+
+void
+ags_recall_child_done(AgsRecall *child,
+		      AgsRecall *parent)
+{
+  ags_recall_remove_child(parent,
+			  child);
 }
 
 AgsRecall*

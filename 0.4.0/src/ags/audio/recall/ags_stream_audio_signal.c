@@ -149,28 +149,8 @@ ags_stream_audio_signal_init(AgsStreamAudioSignal *stream_audio_signal)
 void
 ags_stream_audio_signal_finalize(GObject *gobject)
 {
-  AgsDevout *devout;
-  AgsStreamAudioSignal *stream_audio_signal;
-  AgsRecallAudioSignal *recall_audio_signal;
-  AgsUnrefAudioSignal *unref_audio_signal;
-  AgsAudioSignal *audio_signal;
-
-  stream_audio_signal = AGS_STREAM_AUDIO_SIGNAL(gobject);
-  recall_audio_signal = AGS_RECALL_AUDIO_SIGNAL(gobject);
-
-  audio_signal = recall_audio_signal->source;
-
-  if(AGS_RECALL(recall_audio_signal)->parent != NULL){
-    ags_recycling_remove_audio_signal(AGS_RECYCLING(AGS_RECALL_RECYCLING(AGS_RECALL(recall_audio_signal)->parent)->source),
-				      recall_audio_signal->source);
-  }
-
-  if(recall_audio_signal->source != NULL){
-    g_object_unref(G_OBJECT(recall_audio_signal->source));
-    /* unref audio signal */
-    //    unref_audio_signal = ags_unref_audio_signal_new(audio_signal);
-    //    ags_devout_append_task(AGS_DEVOUT(AGS_RECALL(recall_audio_signal)->devout), (AgsTask *) unref_audio_signal);
-  }
+  ags_recycling_remove_audio_signal(AGS_RECALL_RECYCLING(AGS_RECALL(gobject)->parent)->source,
+				    AGS_RECALL_AUDIO_SIGNAL(gobject)->source);
 
   /* call parent */
   G_OBJECT_CLASS(ags_stream_audio_signal_parent_class)->finalize(gobject); 
@@ -215,8 +195,6 @@ ags_stream_audio_signal_disconnect_dynamic(AgsDynamicConnectable *dynamic_connec
 void
 ags_stream_audio_signal_run_init_pre(AgsRecall *recall)
 {
-  recall->flags &= (~AGS_RECALL_PERSISTENT);
-
   /* call parent */
   AGS_RECALL_CLASS(ags_stream_audio_signal_parent_class)->run_init_pre(recall);
 }
@@ -232,6 +210,7 @@ ags_stream_audio_signal_run_post(AgsRecall *recall)
     AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current = AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current->next;
   }else{
     ags_recall_done(recall);
+    g_object_unref(AGS_RECALL_AUDIO_SIGNAL(recall)->source);
   }
 
   /* call parent */

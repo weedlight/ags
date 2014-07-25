@@ -130,12 +130,17 @@ struct _AgsNoteEditClass
 
 GType ags_note_edit_get_type(void);
 
+void ags_note_edit_set_map_height(AgsNoteEdit *note_edit, guint map_height);
+
 void ags_note_edit_reset_vertically(AgsNoteEdit *note_edit, guint flags);
 void ags_note_edit_reset_horizontally(AgsNoteEdit *note_edit, guint flags);
 
 void ags_note_edit_draw_segment(AgsNoteEdit *note_edit, cairo_t *cr);
 void ags_note_edit_draw_position(AgsNoteEdit *note_edit, cairo_t *cr);
 void ags_note_edit_draw_notation(AgsNoteEdit *note_edit, cairo_t *cr);
+
+void ags_note_edit_draw_scroll(AgsNoteEdit *note_edit, cairo_t *cr,
+			       gdouble position);
 
 AgsNoteEdit* ags_note_edit_new();
 

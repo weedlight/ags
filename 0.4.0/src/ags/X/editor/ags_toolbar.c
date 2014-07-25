@@ -40,7 +40,6 @@ void ags_toolbar_connectable_interface_init(AgsConnectableInterface *connectable
 void ags_toolbar_init(AgsToolbar *toolbar);
 void ags_toolbar_connect(AgsConnectable *connectable);
 void ags_toolbar_disconnect(AgsConnectable *connectable);
-void ags_toolbar_destroy(GtkObject *object);
 void ags_toolbar_show(GtkWidget *widget);
 
 GType
@@ -68,8 +67,8 @@ ags_toolbar_get_type(void)
     };
 
     ags_type_toolbar = g_type_register_static(GTK_TYPE_TOOLBAR,
-					    "AgsToolbar\0", &ags_toolbar_info,
-					    0);
+					      "AgsToolbar\0", &ags_toolbar_info,
+					      0);
     
     g_type_add_interface_static(ags_type_toolbar,
 				AGS_TYPE_CONNECTABLE,
@@ -149,9 +148,8 @@ ags_toolbar_init(AgsToolbar *toolbar)
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) label, NULL, NULL);
 
   toolbar->zoom_history = 6;
-  toolbar->zoom = (GtkOptionMenu *) gtk_option_menu_new();
-  gtk_option_menu_set_menu(toolbar->zoom, (GtkWidget *) ags_zoom_menu_new());
-  gtk_option_menu_set_history(toolbar->zoom, 6);
+  toolbar->zoom = ags_zoom_combo_box_new();
+  gtk_combo_box_set_active(toolbar->zoom, 6);
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) toolbar->zoom, NULL , NULL);
 
   /* tact */
@@ -159,9 +157,8 @@ ags_toolbar_init(AgsToolbar *toolbar)
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) label, NULL, NULL);
 
   toolbar->tact_history = 4;
-  toolbar->tact = (GtkOptionMenu *) gtk_option_menu_new();
-  gtk_option_menu_set_menu(toolbar->tact, (GtkWidget *) ags_tact_menu_new());
-  gtk_option_menu_set_history(toolbar->tact, 4);
+  toolbar->tact = ags_tact_combo_box_new();
+  gtk_combo_box_set_active(toolbar->tact, 4);
   gtk_toolbar_append_widget((GtkToolbar *) toolbar, (GtkWidget *) toolbar->tact, NULL, NULL);
 
   /* edit modes */
@@ -196,9 +193,6 @@ ags_toolbar_connect(AgsConnectable *connectable)
   AgsToolbar *toolbar;
 
   toolbar = AGS_TOOLBAR(connectable);
-
-  g_signal_connect((GObject *) toolbar, "destroy\0",
-		   G_CALLBACK(ags_toolbar_destroy_callback), (gpointer) toolbar);
 
   g_signal_connect((GObject *) toolbar, "show\0",
 		   G_CALLBACK(ags_toolbar_show_callback), (gpointer) toolbar);
@@ -242,11 +236,7 @@ ags_toolbar_connect(AgsConnectable *connectable)
 void
 ags_toolbar_disconnect(AgsConnectable *connectable)
 {
-}
-
-void
-ags_toolbar_destroy(GtkObject *object)
-{
+  //TODO:JK: implement me
 }
 
 void

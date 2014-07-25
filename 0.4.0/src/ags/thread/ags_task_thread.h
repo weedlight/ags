@@ -47,11 +47,11 @@ struct _AgsTaskThread
   pthread_mutex_t read_mutex;
   pthread_mutex_t launch_mutex;
 
-  guint queued;
-  guint pending;
+  volatile guint queued;
+  volatile guint pending;
 
-  GList *exec;
-  GList *queue;
+  volatile GList *exec;
+  volatile GList *queue;
 
   AgsThreadPool *thread_pool;
 };
@@ -64,7 +64,7 @@ struct _AgsTaskThreadClass
 struct _AgsTaskThreadAppend
 {
   AgsTaskThread *task_thread;
-  gpointer data;
+  volatile gpointer data;
 };
 
 GType ags_task_thread_get_type();
