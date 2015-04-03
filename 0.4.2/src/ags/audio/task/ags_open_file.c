@@ -29,6 +29,8 @@
 
 #include <ags/audio/file/ags_audio_file.h>
 
+#include <ags/X/ags_machine.h>
+
 void ags_open_file_class_init(AgsOpenFileClass *open_file);
 void ags_open_file_connectable_interface_init(AgsConnectableInterface *connectable);
 void ags_open_file_init(AgsOpenFile *open_file);
@@ -154,9 +156,8 @@ ags_open_file_launch(AgsTask *task)
   AgsOpenFile *open_file;
   AgsAudio *audio;
   AgsChannel *channel, *iter;
-  AgsFileLink *file_link;
-  AgsAudioSignal *old_template;
   AgsAudioFile *audio_file;
+  AgsFileLink *file_link;
   GSList *current;
   GList *audio_signal;
   gchar *current_filename;
@@ -179,8 +180,13 @@ ags_open_file_launch(AgsTask *task)
 
   /*  */
   if(open_file->create_channels){
-    i_stop = g_slist_length(open_file->filenames);
+    AgsMachine *machine;
+    GList *list;
+    guint pads_old;
 
+    i_stop = g_slist_length(open_file->filenames);
+    pads_old = audio->input_pads;
+    
     if(open_file->overwrite_channels){
       if(i_stop > audio->input_pads){
 	ags_audio_set_pads(audio, AGS_TYPE_INPUT,
@@ -189,14 +195,32 @@ ags_open_file_launch(AgsTask *task)
 
       channel = audio->input;
     }else{
-      guint pads_old;
-
-      pads_old = audio->input_pads;
-
       ags_audio_set_pads(audio, AGS_TYPE_INPUT,
 			 audio->input_pads + i_stop);
 
-      channel = ags_channel_pad_nth(audio->input, pads_old);
+      channel = ags_channel_pad_nth(audio->input,
+				    pads_old);
+    }
+
+    iter = ags_channel_pad_nth(audio->input,
+			       pads_old);
+
+    while(iter != NULL){
+      ags_connectable_connect(AGS_CONNECTABLE(iter));
+
+      iter = iter->next;
+    }
+
+    machine = audio->machine;
+    list = gtk_container_get_children(machine->input);
+    list = g_list_nth(list,
+		      pads_old);
+
+    while(list != NULL){
+      ags_connectable_connect(AGS_CONNECTABLE(list->data));
+      gtk_widget_show_all(list->data);
+
+      list = list->next;
     }
   }
 
@@ -214,7 +238,15 @@ ags_open_file_launch(AgsTask *task)
     audio_signal = audio_file->audio_signal;
 
     while(iter != channel->next_pad && audio_signal != NULL){
-      /* unset link */
+      file_link = g_object_new(AGS_TYPE_FILE_LINK,
+			       "filename\0", current_filename,
+			       NULL);
+      g_object_set(G_OBJECT(iter),
+		   "file-link", file_link,
+		   NULL);
+
+      AGS_AUDIO_SIGNAL(audio_signal->data)->flags |= AGS_AUDIO_SIGNAL_TEMPLATE;
+
       if(iter->link != NULL){
 	error = NULL;
 
@@ -226,28 +258,10 @@ ags_open_file_launch(AgsTask *task)
 	}
       }
 
-      file_link = g_object_new(AGS_TYPE_FILE_LINK,
-			       "filename\0", current_filename,
-			       NULL);
-      g_object_set(G_OBJECT(iter),
-		   "file-link\0", file_link,
-		   NULL);
-
-      /* mark as template */
-      AGS_AUDIO_SIGNAL(audio_signal->data)->flags |= AGS_AUDIO_SIGNAL_TEMPLATE;
-
-      /* old source */
-      old_template = ags_audio_signal_get_template(channel->first_recycling->audio_signal);
-
-      /* add as template */
+      //TODO:JK: add mutex
       ags_recycling_add_audio_signal(iter->first_recycling,
 				     AGS_AUDIO_SIGNAL(audio_signal->data));
 
-      /* remove old template */
-      ags_recycling_remove_audio_signal(channel->first_recycling,
-					old_template);
-
-      /* iterate */
       audio_signal = audio_signal->next;
       iter = iter->next;
     }

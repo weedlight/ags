@@ -16,8 +16,10 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
-#include <ags/audio/recall/ags_stream_audio_signal.h>
+#include <ags/audio/recall/ags_stream_channel.h>
+#include <ags/audio/recall/ags_stream_channel_run.h>
 #include <ags/audio/recall/ags_stream_recycling.h>
+#include <ags/audio/recall/ags_stream_audio_signal.h>
 
 #include <ags-lib/object/ags_connectable.h>
 
@@ -159,8 +161,13 @@ ags_stream_audio_signal_init(AgsStreamAudioSignal *stream_audio_signal)
 void
 ags_stream_audio_signal_finalize(GObject *gobject)
 {
-  ags_recycling_remove_audio_signal(AGS_RECALL_RECYCLING(AGS_RECALL(gobject)->parent)->source,
-				    AGS_RECALL_AUDIO_SIGNAL(gobject)->source);
+  if(AGS_RECALL_AUDIO_SIGNAL(gobject)->source != NULL &&
+     AGS_RECALL(gobject)->parent != NULL){
+    ags_recycling_remove_audio_signal(AGS_RECALL_RECYCLING(AGS_RECALL(gobject)->parent)->source,
+				      AGS_RECALL_AUDIO_SIGNAL(gobject)->source);
+  }
+  //  g_object_unref(AGS_RECALL_AUDIO_SIGNAL(gobject)->source);	
+  //  g_object_unref(AGS_RECALL_AUDIO_SIGNAL(gobject)->source);	
 
   /* call parent */
   G_OBJECT_CLASS(ags_stream_audio_signal_parent_class)->finalize(gobject); 
@@ -207,25 +214,76 @@ ags_stream_audio_signal_run_init_pre(AgsRecall *recall)
 {
   /* call parent */
   AGS_RECALL_CLASS(ags_stream_audio_signal_parent_class)->run_init_pre(recall);
+
+  //  g_message("stream\0");
 }
 
 void
 ags_stream_audio_signal_run_post(AgsRecall *recall)
 {
+  AgsStreamChannel *stream_channel;
+  AgsStreamChannelRun *stream_channel_run;
   AgsStreamAudioSignal *stream_audio_signal;
 
   stream_audio_signal = AGS_STREAM_AUDIO_SIGNAL(recall);
-
-  if(AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current != NULL){
-    AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current = AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current->next;
+  
+  if(recall->parent != NULL &&
+     recall->parent->parent != NULL){
+    stream_channel_run = recall->parent->parent;
+    stream_channel = AGS_RECALL_CHANNEL_RUN(stream_channel_run)->recall_channel;
   }else{
-    ags_recall_done(recall);
-    ags_recycling_remove_audio_signal(AGS_RECALL_RECYCLING(recall->parent)->source,
-				      AGS_RECALL_AUDIO_SIGNAL(recall)->source);
+    stream_channel_run = NULL;
+    stream_channel = NULL;
   }
+  
+  if(AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current != NULL){
+    if(stream_channel != NULL &&
+       AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current->next == NULL){
+      GValue value = {0,};
+      
+      g_value_init(&value, G_TYPE_BOOLEAN);
+      ags_port_safe_read(stream_channel->auto_sense,
+			 &value);
 
-  /* call parent */
-  AGS_RECALL_CLASS(ags_stream_audio_signal_parent_class)->run_post(recall);
+      if(g_value_get_boolean(&value)){
+	signed short *buffer;
+	guint buffer_size;
+	guint i;
+	gboolean add_stream;
+
+	buffer = AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current->data;
+	
+	buffer_size = AGS_RECALL_AUDIO_SIGNAL(recall)->source->buffer_size;
+	add_stream = FALSE;
+	
+	for(i = buffer_size - 1; i > buffer_size / 2; i--){
+	  if(buffer[i] != 0){
+	    add_stream = TRUE;
+	    break;
+	  }
+	}
+	
+	if(add_stream){
+	  ags_audio_signal_add_stream(AGS_RECALL_AUDIO_SIGNAL(recall)->source);
+	}
+      }
+    }
+    
+    AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current = AGS_RECALL_AUDIO_SIGNAL(recall)->source->stream_current->next;
+
+    /* call parent */
+    AGS_RECALL_CLASS(ags_stream_audio_signal_parent_class)->run_post(recall);
+  }else{
+    /* call parent */
+    AGS_RECALL_CLASS(ags_stream_audio_signal_parent_class)->run_post(recall);
+
+    if(recall->parent != NULL){
+      ags_recycling_remove_audio_signal(AGS_RECALL_RECYCLING(recall->parent)->source,
+					AGS_RECALL_AUDIO_SIGNAL(recall)->source);
+    }
+
+    ags_recall_done(recall);
+  }
 }
 
 AgsRecall*

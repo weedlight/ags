@@ -35,6 +35,7 @@ struct _AgsPerformancePreferences
 {
   GtkVBox vbox;
 
+  GtkCheckButton *stream_auto_sense;
   GtkCheckButton *super_threaded;
 };
 

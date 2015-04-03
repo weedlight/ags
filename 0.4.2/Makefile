@@ -85,7 +85,7 @@ DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/configure $(am__configure_deps) \
 	$(srcdir)/config.h.in depcomp AUTHORS COPYING ChangeLog \
 	INSTALL NEWS README compile config.guess config.rpath \
-	config.sub install-sh missing ltmain.sh
+	config.sub install-sh missing
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -220,9 +220,12 @@ am_ags_OBJECTS = ags-ags_combo_box_text.$(OBJEXT) \
 	ags-ags_add_audio_signal.$(OBJEXT) \
 	ags-ags_unref_audio_signal.$(OBJEXT) \
 	ags-ags_remove_region_from_selection.$(OBJEXT) \
+	ags-ags_remove_recall_container.$(OBJEXT) \
 	ags-ags_remove_recall.$(OBJEXT) \
-	ags-ags_append_recall.$(OBJEXT) ags-ags_add_recall.$(OBJEXT) \
-	ags-ags_export_output.$(OBJEXT) ags-ags_remove_note.$(OBJEXT) \
+	ags-ags_append_recall.$(OBJEXT) \
+	ags-ags_add_recall_container.$(OBJEXT) \
+	ags-ags_add_recall.$(OBJEXT) ags-ags_export_output.$(OBJEXT) \
+	ags-ags_remove_note.$(OBJEXT) \
 	ags-ags_set_audio_channels.$(OBJEXT) \
 	ags-ags_cancel_audio.$(OBJEXT) \
 	ags-ags_add_region_to_selection.$(OBJEXT) \
@@ -465,29 +468,26 @@ distuninstallcheck_listfiles = find . -type f -print
 am__distuninstallcheck_listfiles = $(distuninstallcheck_listfiles) \
   | sed 's|^\./|$(prefix)/|' | grep -v '$(infodir)/dir$$'
 distcleancheck_listfiles = find . -type f -print
-ACLOCAL = aclocal-1.14
+ACLOCAL = ${SHELL} /home/minos/ags-0_4_2-42/missing aclocal-1.14
 ALLOCA = 
 AMTAR = $${TAR-tar}
 AM_DEFAULT_VERBOSITY = 1
-AUTOCONF = autoconf
-AUTOHEADER = autoheader
-AUTOMAKE = automake-1.14
+AUTOCONF = ${SHELL} /home/minos/ags-0_4_2-42/missing autoconf
+AUTOHEADER = ${SHELL} /home/minos/ags-0_4_2-42/missing autoheader
+AUTOMAKE = ${SHELL} /home/minos/ags-0_4_2-42/missing automake-1.14
 AWK = gawk
 BUILD_INCLUDED_LIBINTL = no
-CAIRO_CFLAGS = -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/include/pixman-1 -I/usr/include/freetype2 -I/usr/include/libdrm -I/usr/include/libpng16 
+CAIRO_CFLAGS = -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/pixman-1 -I/usr/include/freetype2 -I/usr/include/libpng16 -I/usr/include/harfbuzz -I/usr/include/freetype2 -I/usr/include/harfbuzz -I/usr/include/libdrm -I/usr/include/libpng16 -I/usr/X11/include 
 CAIRO_LIBS = -lcairo 
 CATOBJEXT = .gmo
 CC = gcc
 CCDEPMODE = depmode=gcc3
 
 # what flags you want to pass to the C compiler & linker
-CFLAGS = --pedantic -Wall -O2 -I./src -I/usr/include
+CFLAGS = -g -I./src -I/usr/include
 CFLAG_VISIBILITY = -fvisibility=hidden
 CPP = gcc -E
 CPPFLAGS = 
-CXX = g++
-CXXDEPMODE = depmode=gcc3
-CXXFLAGS = -g -O2
 CYGPATH_W = echo
 DATADIRNAME = share
 DEFS = -DHAVE_CONFIG_H
@@ -495,20 +495,20 @@ DEPDIR = .deps
 ECHO_C = 
 ECHO_N = -n
 ECHO_T = 
-EGREP = /usr/bin/grep -E
+EGREP = /bin/grep -E
 EXEEXT = 
-GDKPIXBUF_CFLAGS = -pthread -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/libpng16 -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include 
+GDKPIXBUF_CFLAGS = -pthread -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/libpng16 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include 
 GDKPIXBUF_LIBS = -lgdk_pixbuf-2.0 -lgobject-2.0 -lglib-2.0 
 GENCAT = gencat
-GETTEXT_MACRO_VERSION = 0.18
+GETTEXT_MACRO_VERSION = 0.19
 GLIBC2 = yes
 GLIBC21 = yes
 GMSGFMT = /usr/bin/msgfmt
 GMSGFMT_015 = /usr/bin/msgfmt
-GOBJECT_CFLAGS = -pthread -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include 
+GOBJECT_CFLAGS = -pthread -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include 
 GOBJECT_LIBS = -lgobject-2.0 -Wl,--export-dynamic -lgmodule-2.0 -pthread -lgthread-2.0 -pthread -lglib-2.0 
-GREP = /usr/bin/grep
-GTK_CFLAGS = -pthread -I/usr/include/gtk-2.0 -I/usr/lib64/gtk-2.0/include -I/usr/include/pango-1.0 -I/usr/include/atk-1.0 -I/usr/include/cairo -I/usr/include/pixman-1 -I/usr/include/libdrm -I/usr/include/libpng16 -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/libpng16 -I/usr/include/pango-1.0 -I/usr/include/harfbuzz -I/usr/include/pango-1.0 -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include -I/usr/include/freetype2 
+GREP = /bin/grep
+GTK_CFLAGS = -pthread -I/usr/include/gtk-2.0 -I/usr/lib/gtk-2.0/include -I/usr/include/pango-1.0 -I/usr/include/atk-1.0 -I/usr/include/cairo -I/usr/include/pixman-1 -I/usr/include/libdrm -I/usr/include/gdk-pixbuf-2.0 -I/usr/include/libpng16 -I/usr/include/pango-1.0 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/freetype2 -I/usr/include/libpng16 -I/usr/include/harfbuzz -I/usr/include/freetype2 -I/usr/include/libpng16 -I/usr/include/harfbuzz -I/usr/X11/include 
 GTK_LIBS = -lgtk-x11-2.0 -lgdk-x11-2.0 -lpangocairo-1.0 -latk-1.0 -lcairo -lgdk_pixbuf-2.0 -lgio-2.0 -lpangoft2-1.0 -lpango-1.0 -lgobject-2.0 -lglib-2.0 -lfontconfig -lfreetype 
 HAVE_ASPRINTF = 1
 HAVE_NEWLOCALE = 1
@@ -522,7 +522,7 @@ INSTALL_PROGRAM = ${INSTALL}
 INSTALL_SCRIPT = ${INSTALL}
 INSTALL_STRIP_PROGRAM = $(install_sh) -c -s
 INSTOBJEXT = .mo
-INTLBISON = :
+INTLBISON = bison
 INTLLIBS = 
 INTLOBJS = 
 INTL_DEFAULT_VERBOSITY = 1
@@ -534,27 +534,26 @@ LIBAO_LIBS = -lao
 LIBASOUND2_CFLAGS = -I/usr/include/alsa 
 LIBASOUND2_LIBS = -lasound 
 LIBICONV = 
-LIBINSTPATCH_CFLAGS = -I/usr/include/libinstpatch-1.0 -I/usr/include/glib-2.0 -I/usr/lib64/glib-2.0/include 
-LIBINSTPATCH_LIBS = -linstpatch-1.0 -lm -lgobject-2.0 -lglib-2.0 -lsndfile 
+LIBINSTPATCH_CFLAGS = -I/usr/include/libinstpatch-1.0 -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include 
+LIBINSTPATCH_LIBS = -linstpatch-1.0 -lgobject-2.0 -lglib-2.0 -lsndfile 
 LIBINTL = 
-LIBMULTITHREAD = -lpthread
+LIBMULTITHREAD = -pthread
 LIBOBJS = 
 LIBPTH = 
 LIBPTH_PREFIX = 
-LIBS = -lrt -lm -ldl -lX11 
+LIBS = -lrt -lm -ldl 
 LIBTHREAD = 
 LIBXML2_CFLAGS = -I/usr/include/libxml2 
 LIBXML2_LIBS = -lxml2 
-LN_S = ln -s
 LTLIBC = -lc
 LTLIBICONV = 
 LTLIBINTL = 
-LTLIBMULTITHREAD = -lpthread
+LTLIBMULTITHREAD = -pthread
 LTLIBOBJS = 
 LTLIBPTH = 
 LTLIBTHREAD = 
-MAKEINFO = makeinfo
-MKDIR_P = /usr/bin/mkdir -p
+MAKEINFO = ${SHELL} /home/minos/ags-0_4_2-42/missing makeinfo
+MKDIR_P = /bin/mkdir -p
 MSGFMT = /usr/bin/msgfmt
 MSGFMT_015 = /usr/bin/msgfmt
 MSGMERGE = /usr/bin/msgmerge
@@ -569,11 +568,11 @@ PACKAGE_VERSION = 0.4.2
 PATH_SEPARATOR = :
 PKG_CONFIG = /usr/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
-PKG_CONFIG_PATH = 
+PKG_CONFIG_PATH = /usr/lib/pkgconfig:/usr/X11/lib/pkgconfig:/usr/X11/share/pkgconfig
 POSUB = po
 PRI_MACROS_BROKEN = 0
 RANLIB = ranlib
-SED = /usr/bin/sed
+SED = /bin/sed
 SET_MAKE = 
 SHELL = /bin/sh
 SNDFILE_CFLAGS = 
@@ -591,14 +590,11 @@ XGETTEXT = /usr/bin/xgettext
 XGETTEXT_015 = /usr/bin/xgettext
 XGETTEXT_EXTRA_OPTIONS = 
 XMKMF = 
-YACC = yacc
-YFLAGS = 
-abs_builddir = /home/joelkraehemann/ags-0_4_2-20
-abs_srcdir = /home/joelkraehemann/ags-0_4_2-20
-abs_top_builddir = /home/joelkraehemann/ags-0_4_2-20
-abs_top_srcdir = /home/joelkraehemann/ags-0_4_2-20
+abs_builddir = /home/minos/ags-0_4_2-42
+abs_srcdir = /home/minos/ags-0_4_2-42
+abs_top_builddir = /home/minos/ags-0_4_2-42
+abs_top_srcdir = /home/minos/ags-0_4_2-42
 ac_ct_CC = gcc
-ac_ct_CXX = g++
 am__include = include
 am__leading_dot = .
 am__quote = 
@@ -624,7 +620,7 @@ host_vendor = unknown
 htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
-install_sh = ${SHELL} /home/joelkraehemann/ags-0_4_2-20/install-sh
+install_sh = ${SHELL} /home/minos/ags-0_4_2-42/install-sh
 libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
@@ -656,8 +652,8 @@ libags_a_CFLAGS = $(GOBJECT_CFLAGS) $(LIBXML2_CFLAGS)
 libags_a_SOURCES = ./src/ags-lib/object/ags_connectable.c ./src/ags-lib/object/ags_connectable.h
 
 # application
-ags_CFLAGS = $(UUID_CFLAGS) $(LIBASOUND2_CFLAGS) $(LIBAO_CFLAGS) $(LIBXML2_CFLAGS) $(OPENSSL_CFLAGS) $(SNDFILE_CFLAGS) $(LIBINSTPATCH_CFLAGS) $(GOBJECT_CFLAGS) $(GDKPIXBUF_CFLAGS) $(CAIRO_CFLAGS) $(GTK_CFLAGS) $(XMLRPC_CFLAGS) $(XMLRPC_UTIL_CFLAGS) $(XMLRPC_SERVER_ABYSS_CFLAGS) $(XMLRPC_SERVER_CGI_CFLAGS) $(XMLRPC_SERVER_CFLAGS) $(PTH_FLAGS)
-ags_LDFLAGS = -ldl $(UUID_LIBS) $(LIBASOUND2_LIBS) $(LIBAO_LIBS) $(LIBXML2_LIBS) $(OPENSSL_LIBS) $(SNDFILE_LIBS) $(LIBINSTPATCH_LIBS) $(GOBJECT_LIBS) $(GDKPIXBUF_LIBS) $(CAIRO_LIBS) $(GTK_LIBS) $(XMLRPC_LIBS) $(XMLRPC_UTIL_LIBS) $(XMLRPC_SERVER_ABYSS_LIBS) $(XMLRPC_SERVER_CGI_LIBS) $(XMLRPC_SERVER_LIBS) -lm -lrt -lX11 -pthread
+ags_CFLAGS = $(CFLAGS) $(UUID_CFLAGS) $(LIBASOUND2_CFLAGS) $(LIBAO_CFLAGS) $(LIBXML2_CFLAGS) $(OPENSSL_CFLAGS) $(SNDFILE_CFLAGS) $(LIBINSTPATCH_CFLAGS) $(GOBJECT_CFLAGS) $(GDKPIXBUF_CFLAGS) $(CAIRO_CFLAGS) $(GTK_CFLAGS) $(XMLRPC_CFLAGS) $(XMLRPC_UTIL_CFLAGS) $(XMLRPC_SERVER_ABYSS_CFLAGS) $(XMLRPC_SERVER_CGI_CFLAGS) $(XMLRPC_SERVER_CFLAGS) $(PTH_FLAGS)
+ags_LDFLAGS = -ldl $(LDFLAGS) $(UUID_LIBS) $(LIBASOUND2_LIBS) $(LIBAO_LIBS) $(LIBXML2_LIBS) $(OPENSSL_LIBS) $(SNDFILE_LIBS) $(LIBINSTPATCH_LIBS) $(GOBJECT_LIBS) $(GDKPIXBUF_LIBS) $(CAIRO_LIBS) $(GTK_LIBS) $(XMLRPC_LIBS) $(XMLRPC_UTIL_LIBS) $(XMLRPC_SERVER_ABYSS_LIBS) $(XMLRPC_SERVER_CGI_LIBS) $(XMLRPC_SERVER_LIBS) -lm -lrt -lX11 -pthread
 ags_LDADD = libags.a
 ags_SOURCES = src/ags/lib/ags_combo_box_text.c src/ags/lib/ags_list.c \
 	src/ags/lib/ags_container.c src/ags/lib/ags_parameter.h \
@@ -897,9 +893,11 @@ ags_SOURCES = src/ags/lib/ags_combo_box_text.c src/ags/lib/ags_list.c \
 	src/ags/audio/task/ags_set_audio_channels.h \
 	src/ags/audio/task/ags_scroll_on_play.h \
 	src/ags/audio/task/ags_remove_audio.h \
+	src/ags/audio/task/ags_remove_recall_container.c \
 	src/ags/audio/task/ags_remove_recall.c \
 	src/ags/audio/task/ags_append_recall.c \
 	src/ags/audio/task/ags_free_selection.h \
+	src/ags/audio/task/ags_add_recall_container.c \
 	src/ags/audio/task/ags_add_recall.c \
 	src/ags/audio/task/ags_export_output.c \
 	src/ags/audio/task/ags_init_channel.h \
@@ -932,6 +930,7 @@ ags_SOURCES = src/ags/lib/ags_combo_box_text.c src/ags/lib/ags_list.c \
 	src/ags/audio/task/recall/ags_apply_tact.h \
 	src/ags/audio/task/ags_remove_region_from_selection.h \
 	src/ags/audio/task/ags_cancel_channel.c \
+	src/ags/audio/task/ags_add_recall_container.h \
 	src/ags/audio/task/ags_add_recall.h \
 	src/ags/audio/task/ags_add_note.h \
 	src/ags/audio/task/ags_start_devout.c \
@@ -969,6 +968,7 @@ ags_SOURCES = src/ags/lib/ags_combo_box_text.c src/ags/lib/ags_list.c \
 	src/ags/audio/task/ags_append_audio.h \
 	src/ags/audio/task/ags_start_devout.h \
 	src/ags/audio/task/ags_display_tact.h \
+	src/ags/audio/task/ags_remove_recall_container.h \
 	src/ags/audio/task/ags_remove_recall.h \
 	src/ags/audio/task/ags_change_tact.c \
 	src/ags/audio/task/ags_append_channel.h \
@@ -1319,6 +1319,7 @@ include ./$(DEPDIR)/ags-ags_add_line_member.Po
 include ./$(DEPDIR)/ags-ags_add_note.Po
 include ./$(DEPDIR)/ags-ags_add_point_to_selection.Po
 include ./$(DEPDIR)/ags-ags_add_recall.Po
+include ./$(DEPDIR)/ags-ags_add_recall_container.Po
 include ./$(DEPDIR)/ags-ags_add_region_to_selection.Po
 include ./$(DEPDIR)/ags-ags_amplifier.Po
 include ./$(DEPDIR)/ags-ags_append_audio.Po
@@ -1565,6 +1566,7 @@ include ./$(DEPDIR)/ags-ags_remove_audio_signal.Po
 include ./$(DEPDIR)/ags-ags_remove_note.Po
 include ./$(DEPDIR)/ags-ags_remove_point_from_selection.Po
 include ./$(DEPDIR)/ags-ags_remove_recall.Po
+include ./$(DEPDIR)/ags-ags_remove_recall_container.Po
 include ./$(DEPDIR)/ags-ags_remove_region_from_selection.Po
 include ./$(DEPDIR)/ags-ags_resize_audio.Po
 include ./$(DEPDIR)/ags-ags_resize_editor.Po
@@ -3728,6 +3730,20 @@ ags-ags_remove_region_from_selection.obj: src/ags/audio/task/ags_remove_region_f
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -c -o ags-ags_remove_region_from_selection.obj `if test -f 'src/ags/audio/task/ags_remove_region_from_selection.c'; then $(CYGPATH_W) 'src/ags/audio/task/ags_remove_region_from_selection.c'; else $(CYGPATH_W) '$(srcdir)/src/ags/audio/task/ags_remove_region_from_selection.c'; fi`
 
+ags-ags_remove_recall_container.o: src/ags/audio/task/ags_remove_recall_container.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -MT ags-ags_remove_recall_container.o -MD -MP -MF $(DEPDIR)/ags-ags_remove_recall_container.Tpo -c -o ags-ags_remove_recall_container.o `test -f 'src/ags/audio/task/ags_remove_recall_container.c' || echo '$(srcdir)/'`src/ags/audio/task/ags_remove_recall_container.c
+	$(AM_V_at)$(am__mv) $(DEPDIR)/ags-ags_remove_recall_container.Tpo $(DEPDIR)/ags-ags_remove_recall_container.Po
+#	$(AM_V_CC)source='src/ags/audio/task/ags_remove_recall_container.c' object='ags-ags_remove_recall_container.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -c -o ags-ags_remove_recall_container.o `test -f 'src/ags/audio/task/ags_remove_recall_container.c' || echo '$(srcdir)/'`src/ags/audio/task/ags_remove_recall_container.c
+
+ags-ags_remove_recall_container.obj: src/ags/audio/task/ags_remove_recall_container.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -MT ags-ags_remove_recall_container.obj -MD -MP -MF $(DEPDIR)/ags-ags_remove_recall_container.Tpo -c -o ags-ags_remove_recall_container.obj `if test -f 'src/ags/audio/task/ags_remove_recall_container.c'; then $(CYGPATH_W) 'src/ags/audio/task/ags_remove_recall_container.c'; else $(CYGPATH_W) '$(srcdir)/src/ags/audio/task/ags_remove_recall_container.c'; fi`
+	$(AM_V_at)$(am__mv) $(DEPDIR)/ags-ags_remove_recall_container.Tpo $(DEPDIR)/ags-ags_remove_recall_container.Po
+#	$(AM_V_CC)source='src/ags/audio/task/ags_remove_recall_container.c' object='ags-ags_remove_recall_container.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -c -o ags-ags_remove_recall_container.obj `if test -f 'src/ags/audio/task/ags_remove_recall_container.c'; then $(CYGPATH_W) 'src/ags/audio/task/ags_remove_recall_container.c'; else $(CYGPATH_W) '$(srcdir)/src/ags/audio/task/ags_remove_recall_container.c'; fi`
+
 ags-ags_remove_recall.o: src/ags/audio/task/ags_remove_recall.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -MT ags-ags_remove_recall.o -MD -MP -MF $(DEPDIR)/ags-ags_remove_recall.Tpo -c -o ags-ags_remove_recall.o `test -f 'src/ags/audio/task/ags_remove_recall.c' || echo '$(srcdir)/'`src/ags/audio/task/ags_remove_recall.c
 	$(AM_V_at)$(am__mv) $(DEPDIR)/ags-ags_remove_recall.Tpo $(DEPDIR)/ags-ags_remove_recall.Po
@@ -3755,6 +3771,20 @@ ags-ags_append_recall.obj: src/ags/audio/task/ags_append_recall.c
 #	$(AM_V_CC)source='src/ags/audio/task/ags_append_recall.c' object='ags-ags_append_recall.obj' libtool=no \
 #	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
 #	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -c -o ags-ags_append_recall.obj `if test -f 'src/ags/audio/task/ags_append_recall.c'; then $(CYGPATH_W) 'src/ags/audio/task/ags_append_recall.c'; else $(CYGPATH_W) '$(srcdir)/src/ags/audio/task/ags_append_recall.c'; fi`
+
+ags-ags_add_recall_container.o: src/ags/audio/task/ags_add_recall_container.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -MT ags-ags_add_recall_container.o -MD -MP -MF $(DEPDIR)/ags-ags_add_recall_container.Tpo -c -o ags-ags_add_recall_container.o `test -f 'src/ags/audio/task/ags_add_recall_container.c' || echo '$(srcdir)/'`src/ags/audio/task/ags_add_recall_container.c
+	$(AM_V_at)$(am__mv) $(DEPDIR)/ags-ags_add_recall_container.Tpo $(DEPDIR)/ags-ags_add_recall_container.Po
+#	$(AM_V_CC)source='src/ags/audio/task/ags_add_recall_container.c' object='ags-ags_add_recall_container.o' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -c -o ags-ags_add_recall_container.o `test -f 'src/ags/audio/task/ags_add_recall_container.c' || echo '$(srcdir)/'`src/ags/audio/task/ags_add_recall_container.c
+
+ags-ags_add_recall_container.obj: src/ags/audio/task/ags_add_recall_container.c
+	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -MT ags-ags_add_recall_container.obj -MD -MP -MF $(DEPDIR)/ags-ags_add_recall_container.Tpo -c -o ags-ags_add_recall_container.obj `if test -f 'src/ags/audio/task/ags_add_recall_container.c'; then $(CYGPATH_W) 'src/ags/audio/task/ags_add_recall_container.c'; else $(CYGPATH_W) '$(srcdir)/src/ags/audio/task/ags_add_recall_container.c'; fi`
+	$(AM_V_at)$(am__mv) $(DEPDIR)/ags-ags_add_recall_container.Tpo $(DEPDIR)/ags-ags_add_recall_container.Po
+#	$(AM_V_CC)source='src/ags/audio/task/ags_add_recall_container.c' object='ags-ags_add_recall_container.obj' libtool=no \
+#	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) \
+#	$(AM_V_CC_no)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -c -o ags-ags_add_recall_container.obj `if test -f 'src/ags/audio/task/ags_add_recall_container.c'; then $(CYGPATH_W) 'src/ags/audio/task/ags_add_recall_container.c'; else $(CYGPATH_W) '$(srcdir)/src/ags/audio/task/ags_add_recall_container.c'; fi`
 
 ags-ags_add_recall.o: src/ags/audio/task/ags_add_recall.c
 	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(ags_CFLAGS) $(CFLAGS) -MT ags-ags_add_recall.o -MD -MP -MF $(DEPDIR)/ags-ags_add_recall.Tpo -c -o ags-ags_add_recall.o `test -f 'src/ags/audio/task/ags_add_recall.c' || echo '$(srcdir)/'`src/ags/audio/task/ags_add_recall.c

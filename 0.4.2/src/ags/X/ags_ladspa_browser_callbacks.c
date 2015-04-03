@@ -91,13 +91,13 @@ ags_ladspa_browser_plugin_effect_callback(GtkComboBoxText *combo_box,
   gchar *str, *tmp;
   guint port_count;
   guint y;
-  guint i;
+  unsigned long i;
 
   void *plugin_so;
   LADSPA_Descriptor_Function ladspa_descriptor;
   LADSPA_Descriptor *plugin_descriptor;
   LADSPA_PortDescriptor *port_descriptor;
-  long index;
+  unsigned long index;
 
   /* retrieve filename and effect */
   list_start = 

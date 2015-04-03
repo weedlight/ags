@@ -510,7 +510,7 @@ ags_port_real_safe_read(AgsPort *port, GValue *value)
     }else if(port->port_value_type == G_TYPE_UINT64){
       g_value_set_uint64(value, port->port_value.ags_port_uint);
     }else if(port->port_value_type == G_TYPE_FLOAT){
-      g_value_set_double(value, (gdouble) port->port_value.ags_port_float);
+      g_value_set_float(value, (gdouble) port->port_value.ags_port_float);
     }else if(port->port_value_type == G_TYPE_DOUBLE){
       g_value_set_double(value, port->port_value.ags_port_double);
     }
@@ -585,13 +585,15 @@ ags_port_real_safe_write(AgsPort *port, GValue *value)
     }else if(port->port_value_type == G_TYPE_UINT64){
       port->port_value.ags_port_uint = g_value_get_uint64(value);
     }else if(port->port_value_type == G_TYPE_FLOAT){
-      port->port_value.ags_port_float = (gfloat) g_value_get_double(value);
+      port->port_value.ags_port_float = (gfloat) g_value_get_float(value);
     }else if(port->port_value_type == G_TYPE_DOUBLE){
       port->port_value.ags_port_double = g_value_get_double(value);
     }else if(port->port_value_type == G_TYPE_POINTER){
       port->port_value.ags_port_pointer = g_value_get_pointer(value);
     }else if(port->port_value_type == G_TYPE_OBJECT){
       port->port_value.ags_port_object = g_value_get_object(value);
+    }else{
+      g_warning("ags_port.c: unknown type\0");
     }
   }else{
     data = g_value_get_pointer(value);
@@ -611,6 +613,8 @@ ags_port_real_safe_write(AgsPort *port, GValue *value)
 
       if(port->port_value_type == G_TYPE_OBJECT){
 	port->port_value.ags_port_object = data;
+      }else{
+	g_warning("ags_port.c: unknown type\0");
       }
     }
   }
@@ -641,13 +645,13 @@ ags_port_safe_write(AgsPort *port, GValue *value)
 void
 ags_port_real_safe_get_property(AgsPort *port, gchar *property_name, GValue *value)
 {
-  //  pthread_mutex_lock(&(port->mutex));
+  pthread_mutex_lock(&(port->mutex));
 
   g_object_get_property(port->port_value.ags_port_object,
 			property_name,
 			value);
 
-  //  pthread_mutex_unlock(&(port->mutex));
+  pthread_mutex_unlock(&(port->mutex));
 }
 
 /**
@@ -674,13 +678,13 @@ ags_port_safe_get_property(AgsPort *port, gchar *property_name, GValue *value)
 void
 ags_port_real_safe_set_property(AgsPort *port, gchar *property_name, GValue *value)
 {
-  //  pthread_mutex_lock(&(port->mutex));
+  pthread_mutex_lock(&(port->mutex));
 
   g_object_set_property(port->port_value.ags_port_object,
 			property_name,
 			value);
 
-  //  pthread_mutex_unlock(&(port->mutex));
+  pthread_mutex_unlock(&(port->mutex));
 }
 
 /**

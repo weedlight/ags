@@ -21,6 +21,8 @@
 
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/main.h>
+
 #include <ags/audio/ags_devout.h>
 
 #include <math.h>
@@ -49,6 +51,8 @@ void ags_gui_thread_suspend_handler(int sig);
  *
  * The #AgsGuiThread acts as graphical user interface thread.
  */
+
+extern pthread_mutex_t ags_application_mutex;
 
 static gpointer ags_gui_thread_parent_class = NULL;
 static AgsConnectableInterface *ags_gui_thread_parent_connectable_interface;
@@ -249,6 +253,8 @@ ags_gui_thread_run(AgsThread *thread)
     g_main_context_release(main_context);
   }
 
+  pthread_mutex_lock(&(ags_application_mutex));
+
   gui_thread = AGS_GUI_THREAD(thread);
   audio_loop = AGS_AUDIO_LOOP(thread->parent);
   task_thread = AGS_TASK_THREAD(audio_loop->task_thread);
@@ -257,6 +263,8 @@ ags_gui_thread_run(AgsThread *thread)
   main_context = g_main_context_default();
 
   ags_gui_thread_do_gtk_iteration();
+
+  pthread_mutex_unlock(&(ags_application_mutex));
 }
 
 void

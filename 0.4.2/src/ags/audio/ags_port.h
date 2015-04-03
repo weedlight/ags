@@ -24,6 +24,8 @@
 
 #include <pthread.h>
 
+#include <ladspa.h>
+
 #define AGS_TYPE_PORT                (ags_port_get_type())
 #define AGS_PORT(obj)                (G_TYPE_CHECK_INSTANCE_CAST((obj), AGS_TYPE_PORT, AgsPort))
 #define AGS_PORT_CLASS(class)        (G_TYPE_CHECK_CLASS_CAST((class), AGS_TYPE_PORT, AgsPortClass))

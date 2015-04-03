@@ -21,7 +21,7 @@ If you have problems, you may need to regenerate the build system entirely.
 To do so, use the procedure documented by the package, typically 'autoreconf'.])])
 
 # codeset.m4 serial 5 (gettext-0.18.2)
-dnl Copyright (C) 2000-2002, 2006, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2000-2002, 2006, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -46,7 +46,7 @@ AC_DEFUN([AM_LANGINFO_CODESET],
 
 dnl 'extern inline' a la ISO C99.
 
-dnl Copyright 2012-2013 Free Software Foundation, Inc.
+dnl Copyright 2012-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -65,32 +65,66 @@ AC_DEFUN([gl_EXTERN_INLINE],
    'reference to static identifier "f" in extern inline function'.
    This bug was observed with Sun C 5.12 SunOS_i386 2011/11/16.
 
-   Suppress the use of extern inline on Apple's platforms, as Libc at least
-   through Libc-825.26 (2013-04-09) is incompatible with it; see, e.g.,
-   <http://lists.gnu.org/archive/html/bug-gnulib/2012-12/msg00023.html>.
-   Perhaps Apple will fix this some day.  */
+   Suppress extern inline (with or without __attribute__ ((__gnu_inline__)))
+   on configurations that mistakenly use 'static inline' to implement
+   functions or macros in standard C headers like <ctype.h>.  For example,
+   if isdigit is mistakenly implemented via a static inline function,
+   a program containing an extern inline function that calls isdigit
+   may not work since the C standard prohibits extern inline functions
+   from calling static functions.  This bug is known to occur on:
+
+     OS X 10.8 and earlier; see:
+     http://lists.gnu.org/archive/html/bug-gnulib/2012-12/msg00023.html
+
+     DragonFly; see
+     http://muscles.dragonflybsd.org/bulk/bleeding-edge-potential/latest-per-pkg/ah-tty-0.3.12.log
+
+     FreeBSD; see:
+     http://lists.gnu.org/archive/html/bug-gnulib/2014-07/msg00104.html
+
+   OS X 10.9 has a macro __header_inline indicating the bug is fixed for C and
+   for clang but remains for g++; see <http://trac.macports.org/ticket/41033>.
+   Assume DragonFly and FreeBSD will be similar.  */
+#if (((defined __APPLE__ && defined __MACH__) \
+      || defined __DragonFly__ || defined __FreeBSD__) \
+     && (defined __header_inline \
+         ? (defined __cplusplus && defined __GNUC_STDC_INLINE__ \
+            && ! defined __clang__) \
+         : ((! defined _DONT_USE_CTYPE_INLINE_ \
+             && (defined __GNUC__ || defined __cplusplus)) \
+            || (defined _FORTIFY_SOURCE && 0 < _FORTIFY_SOURCE \
+                && defined __GNUC__ && ! defined __cplusplus))))
+# define _GL_EXTERN_INLINE_STDHEADER_BUG
+#endif
 #if ((__GNUC__ \
       ? defined __GNUC_STDC_INLINE__ && __GNUC_STDC_INLINE__ \
       : (199901L <= __STDC_VERSION__ \
          && !defined __HP_cc \
          && !(defined __SUNPRO_C && __STDC__))) \
-     && !defined __APPLE__)
+     && !defined _GL_EXTERN_INLINE_STDHEADER_BUG)
 # define _GL_INLINE inline
 # define _GL_EXTERN_INLINE extern inline
+# define _GL_EXTERN_INLINE_IN_USE
 #elif (2 < __GNUC__ + (7 <= __GNUC_MINOR__) && !defined __STRICT_ANSI__ \
-       && !defined __APPLE__)
-# if __GNUC_GNU_INLINE__
+       && !defined _GL_EXTERN_INLINE_STDHEADER_BUG)
+# if defined __GNUC_GNU_INLINE__ && __GNUC_GNU_INLINE__
    /* __gnu_inline__ suppresses a GCC 4.2 diagnostic.  */
 #  define _GL_INLINE extern inline __attribute__ ((__gnu_inline__))
 # else
 #  define _GL_INLINE extern inline
 # endif
 # define _GL_EXTERN_INLINE extern
+# define _GL_EXTERN_INLINE_IN_USE
 #else
 # define _GL_INLINE static _GL_UNUSED
 # define _GL_EXTERN_INLINE static _GL_UNUSED
 #endif
 
+/* In GCC, suppress bogus "no previous prototype for 'FOO'"
+   and "no previous declaration for 'FOO'" diagnostics,
+   when FOO is an inline function in the header; see
+   <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=54113> and
+   <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=63877>.  */
 #if 4 < __GNUC__ + (6 <= __GNUC_MINOR__)
 # if defined __GNUC_STDC_INLINE__ && __GNUC_STDC_INLINE__
 #  define _GL_INLINE_HEADER_CONST_PRAGMA
@@ -98,10 +132,6 @@ AC_DEFUN([gl_EXTERN_INLINE],
 #  define _GL_INLINE_HEADER_CONST_PRAGMA \
      _Pragma ("GCC diagnostic ignored \"-Wsuggest-attribute=const\"")
 # endif
-  /* Suppress GCC's bogus "no previous prototype for 'FOO'"
-     and "no previous declaration for 'FOO'"  diagnostics,
-     when FOO is an inline function in the header; see
-     <http://gcc.gnu.org/bugzilla/show_bug.cgi?id=54113>.  */
 # define _GL_INLINE_HEADER_BEGIN \
     _Pragma ("GCC diagnostic push") \
     _Pragma ("GCC diagnostic ignored \"-Wmissing-prototypes\"") \
@@ -116,7 +146,7 @@ AC_DEFUN([gl_EXTERN_INLINE],
 ])
 
 # fcntl-o.m4 serial 4
-dnl Copyright (C) 2006, 2009-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2006, 2009-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -251,7 +281,7 @@ AC_DEFUN([gl_FCNTL_O_FLAGS],
 ])
 
 # gettext.m4 serial 66 (gettext-0.18.2)
-dnl Copyright (C) 1995-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1995-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -653,7 +683,7 @@ dnl Usage: AM_GNU_GETTEXT_VERSION([gettext-version])
 AC_DEFUN([AM_GNU_GETTEXT_VERSION], [])
 
 # glibc2.m4 serial 3
-dnl Copyright (C) 2000-2002, 2004, 2008, 2010-2013 Free Software Foundation,
+dnl Copyright (C) 2000-2002, 2004, 2008, 2010-2014 Free Software Foundation,
 dnl Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
@@ -685,7 +715,7 @@ AC_DEFUN([gt_GLIBC2],
 )
 
 # glibc21.m4 serial 5
-dnl Copyright (C) 2000-2002, 2004, 2008, 2010-2013 Free Software Foundation,
+dnl Copyright (C) 2000-2002, 2004, 2008, 2010-2014 Free Software Foundation,
 dnl Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
@@ -719,8 +749,8 @@ AC_DEFUN([gl_GLIBC21],
   ]
 )
 
-# iconv.m4 serial 18 (gettext-0.18.2)
-dnl Copyright (C) 2000-2002, 2007-2013 Free Software Foundation, Inc.
+# iconv.m4 serial 19 (gettext-0.18.2)
+dnl Copyright (C) 2000-2002, 2007-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -793,27 +823,33 @@ AC_DEFUN([AM_ICONV_LINK],
       if test $am_cv_lib_iconv = yes; then
         LIBS="$LIBS $LIBICONV"
       fi
-      AC_RUN_IFELSE(
-        [AC_LANG_SOURCE([[
+      am_cv_func_iconv_works=no
+      for ac_iconv_const in '' 'const'; do
+        AC_RUN_IFELSE(
+          [AC_LANG_PROGRAM(
+             [[
 #include <iconv.h>
 #include <string.h>
-int main ()
-{
-  int result = 0;
+
+#ifndef ICONV_CONST
+# define ICONV_CONST $ac_iconv_const
+#endif
+             ]],
+             [[int result = 0;
   /* Test against AIX 5.1 bug: Failures are not distinguishable from successful
      returns.  */
   {
     iconv_t cd_utf8_to_88591 = iconv_open ("ISO8859-1", "UTF-8");
     if (cd_utf8_to_88591 != (iconv_t)(-1))
       {
-        static const char input[] = "\342\202\254"; /* EURO SIGN */
+        static ICONV_CONST char input[] = "\342\202\254"; /* EURO SIGN */
         char buf[10];
-        const char *inptr = input;
+        ICONV_CONST char *inptr = input;
         size_t inbytesleft = strlen (input);
         char *outptr = buf;
         size_t outbytesleft = sizeof (buf);
         size_t res = iconv (cd_utf8_to_88591,
-                            (char **) &inptr, &inbytesleft,
+                            &inptr, &inbytesleft,
                             &outptr, &outbytesleft);
         if (res == 0)
           result |= 1;
@@ -826,14 +862,14 @@ int main ()
     iconv_t cd_ascii_to_88591 = iconv_open ("ISO8859-1", "646");
     if (cd_ascii_to_88591 != (iconv_t)(-1))
       {
-        static const char input[] = "\263";
+        static ICONV_CONST char input[] = "\263";
         char buf[10];
-        const char *inptr = input;
+        ICONV_CONST char *inptr = input;
         size_t inbytesleft = strlen (input);
         char *outptr = buf;
         size_t outbytesleft = sizeof (buf);
         size_t res = iconv (cd_ascii_to_88591,
-                            (char **) &inptr, &inbytesleft,
+                            &inptr, &inbytesleft,
                             &outptr, &outbytesleft);
         if (res == 0)
           result |= 2;
@@ -845,14 +881,14 @@ int main ()
     iconv_t cd_88591_to_utf8 = iconv_open ("UTF-8", "ISO-8859-1");
     if (cd_88591_to_utf8 != (iconv_t)(-1))
       {
-        static const char input[] = "\304";
+        static ICONV_CONST char input[] = "\304";
         static char buf[2] = { (char)0xDE, (char)0xAD };
-        const char *inptr = input;
+        ICONV_CONST char *inptr = input;
         size_t inbytesleft = 1;
         char *outptr = buf;
         size_t outbytesleft = 1;
         size_t res = iconv (cd_88591_to_utf8,
-                            (char **) &inptr, &inbytesleft,
+                            &inptr, &inbytesleft,
                             &outptr, &outbytesleft);
         if (res != (size_t)(-1) || outptr - buf > 1 || buf[1] != (char)0xAD)
           result |= 4;
@@ -865,14 +901,14 @@ int main ()
     iconv_t cd_88591_to_utf8 = iconv_open ("utf8", "iso88591");
     if (cd_88591_to_utf8 != (iconv_t)(-1))
       {
-        static const char input[] = "\304rger mit b\366sen B\374bchen ohne Augenma\337";
+        static ICONV_CONST char input[] = "\304rger mit b\366sen B\374bchen ohne Augenma\337";
         char buf[50];
-        const char *inptr = input;
+        ICONV_CONST char *inptr = input;
         size_t inbytesleft = strlen (input);
         char *outptr = buf;
         size_t outbytesleft = sizeof (buf);
         size_t res = iconv (cd_88591_to_utf8,
-                            (char **) &inptr, &inbytesleft,
+                            &inptr, &inbytesleft,
                             &outptr, &outbytesleft);
         if ((int)res > 0)
           result |= 8;
@@ -892,17 +928,14 @@ int main ()
       && iconv_open ("utf8", "eucJP") == (iconv_t)(-1))
     result |= 16;
   return result;
-}]])],
-        [am_cv_func_iconv_works=yes],
-        [am_cv_func_iconv_works=no],
-        [
-changequote(,)dnl
-         case "$host_os" in
-           aix* | hpux*) am_cv_func_iconv_works="guessing no" ;;
-           *)            am_cv_func_iconv_works="guessing yes" ;;
-         esac
-changequote([,])dnl
-        ])
+]])],
+          [am_cv_func_iconv_works=yes], ,
+          [case "$host_os" in
+             aix* | hpux*) am_cv_func_iconv_works="guessing no" ;;
+             *)            am_cv_func_iconv_works="guessing yes" ;;
+           esac])
+        test "$am_cv_func_iconv_works" = no || break
+      done
       LIBS="$am_save_LIBS"
     ])
     case "$am_cv_func_iconv_works" in
@@ -989,7 +1022,7 @@ size_t iconv();
 ])
 
 # intdiv0.m4 serial 6 (gettext-0.18.2)
-dnl Copyright (C) 2002, 2007-2008, 2010-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2002, 2007-2008, 2010-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -1076,8 +1109,8 @@ changequote([,])dnl
     [Define if integer division by zero raises signal SIGFPE.])
 ])
 
-# intl.m4 serial 25 (gettext-0.18.3)
-dnl Copyright (C) 1995-2013 Free Software Foundation, Inc.
+# intl.m4 serial 28 (gettext-0.19)
+dnl Copyright (C) 1995-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -1121,6 +1154,7 @@ AC_DEFUN([AM_INTL_SUBDIR],
   AC_REQUIRE([gl_FCNTL_O_FLAGS])dnl
   AC_REQUIRE([gt_INTL_MACOSX])dnl
   AC_REQUIRE([gl_EXTERN_INLINE])dnl
+  AC_REQUIRE([gt_GL_ATTRIBUTE])dnl
 
   dnl Support for automake's --enable-silent-rules.
   case "$enable_silent_rules" in
@@ -1319,8 +1353,7 @@ AC_DEFUN([gt_INTL_SUBDIR_CORE],
 
   dnl intl/plural.c is generated from intl/plural.y. It requires bison,
   dnl because plural.y uses bison specific features. It requires at least
-  dnl bison-1.26 because earlier versions generate a plural.c that doesn't
-  dnl compile.
+  dnl bison-2.7 for %define api.pure.
   dnl bison is only needed for the maintainer (who touches plural.y). But in
   dnl order to avoid separate Makefiles or --enable-maintainer-mode, we put
   dnl the rule in general Makefile. Now, some people carelessly touch the
@@ -1337,7 +1370,7 @@ changequote(<<,>>)dnl
     ac_prog_version=`$INTLBISON --version 2>&1 | sed -n 's/^.*GNU Bison.* \([0-9]*\.[0-9.]*\).*$/\1/p'`
     case $ac_prog_version in
       '') ac_prog_version="v. ?.??, bad"; ac_verc_fail=yes;;
-      1.2[6-9]* | 1.[3-9][0-9]* | [2-9].*)
+      2.[7-9]* | [3-9].*)
 changequote([,])dnl
          ac_prog_version="$ac_prog_version, ok"; ac_verc_fail=no;;
       *) ac_prog_version="$ac_prog_version, bad"; ac_verc_fail=yes;;
@@ -1349,8 +1382,34 @@ changequote([,])dnl
   fi
 ])
 
+dnl Copies _GL_UNUSED and _GL_ATTRIBUTE_PURE definitions from
+dnl gnulib-common.m4 as a fallback, if the project isn't using Gnulib.
+AC_DEFUN([gt_GL_ATTRIBUTE], [
+  m4_ifndef([gl_[]COMMON],
+    AH_VERBATIM([gt_gl_attribute],
+[/* Define as a marker that can be attached to declarations that might not
+    be used.  This helps to reduce warnings, such as from
+    GCC -Wunused-parameter.  */
+#ifndef _GL_UNUSED
+# if __GNUC__ >= 3 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 7)
+#  define _GL_UNUSED __attribute__ ((__unused__))
+# else
+#  define _GL_UNUSED
+# endif
+#endif
+
+/* The __pure__ attribute was added in gcc 2.96.  */
+#ifndef _GL_ATTRIBUTE_PURE
+# if __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 96)
+#  define _GL_ATTRIBUTE_PURE __attribute__ ((__pure__))
+# else
+#  define _GL_ATTRIBUTE_PURE /* empty */
+# endif
+#endif
+]))])
+
 # intlmacosx.m4 serial 5 (gettext-0.18.2)
-dnl Copyright (C) 2004-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2004-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -1407,7 +1466,7 @@ AC_DEFUN([gt_INTL_MACOSX],
 ])
 
 # intmax.m4 serial 6 (gettext-0.18.2)
-dnl Copyright (C) 2002-2005, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2002-2005, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -1444,7 +1503,7 @@ AC_DEFUN([gt_TYPE_INTMAX_T],
 ])
 
 # inttypes-pri.m4 serial 7 (gettext-0.18.2)
-dnl Copyright (C) 1997-2002, 2006, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1997-2002, 2006, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -1487,7 +1546,7 @@ char *p = PRId32;
 ])
 
 # inttypes_h.m4 serial 10
-dnl Copyright (C) 1997-2004, 2006, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1997-2004, 2006, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -1517,7 +1576,7 @@ AC_DEFUN([gl_AC_HEADER_INTTYPES_H],
 ])
 
 # lcmessage.m4 serial 7 (gettext-0.18.2)
-dnl Copyright (C) 1995-2002, 2004-2005, 2008-2013 Free Software Foundation,
+dnl Copyright (C) 1995-2002, 2004-2005, 2008-2014 Free Software Foundation,
 dnl Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
@@ -1553,7 +1612,7 @@ AC_DEFUN([gt_LC_MESSAGES],
 ])
 
 # lib-ld.m4 serial 6
-dnl Copyright (C) 1996-2003, 2009-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1996-2003, 2009-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -1673,7 +1732,7 @@ AC_LIB_PROG_LD_GNU
 ])
 
 # lib-link.m4 serial 26 (gettext-0.18.2)
-dnl Copyright (C) 2001-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2001-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -2451,7 +2510,7 @@ AC_DEFUN([AC_LIB_LINKFLAGS_FROM_LIBS],
 ])
 
 # lib-prefix.m4 serial 7 (gettext-0.18)
-dnl Copyright (C) 2001-2005, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2001-2005, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -2676,7 +2735,7 @@ sixtyfour bits
 ])
 
 # lock.m4 serial 13 (gettext-0.18.2)
-dnl Copyright (C) 2005-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2005-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -2719,7 +2778,7 @@ return !x;
 AC_DEFUN([gl_PREREQ_LOCK], [:])
 
 # longlong.m4 serial 17
-dnl Copyright (C) 1999-2007, 2009-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1999-2007, 2009-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -2833,7 +2892,7 @@ AC_DEFUN([_AC_TYPE_LONG_LONG_SNIPPET],
 ])
 
 # nls.m4 serial 5 (gettext-0.18)
-dnl Copyright (C) 1995-2003, 2005-2006, 2008-2013 Free Software Foundation,
+dnl Copyright (C) 1995-2003, 2005-2006, 2008-2014 Free Software Foundation,
 dnl Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
@@ -3080,8 +3139,8 @@ AS_VAR_COPY([$1], [pkg_cv_][$1])
 AS_VAR_IF([$1], [""], [$5], [$4])dnl
 ])# PKG_CHECK_VAR
 
-# po.m4 serial 21 (gettext-0.18.3)
-dnl Copyright (C) 1995-2013 Free Software Foundation, Inc.
+# po.m4 serial 24 (gettext-0.19)
+dnl Copyright (C) 1995-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -3112,7 +3171,7 @@ AC_DEFUN([AM_PO_SUBDIRS],
 
   dnl Release version of the gettext macros. This is used to ensure that
   dnl the gettext macros and po/Makefile.in.in are in sync.
-  AC_SUBST([GETTEXT_MACRO_VERSION], [0.18])
+  AC_SUBST([GETTEXT_MACRO_VERSION], [0.19])
 
   dnl Perform the following tests also if --disable-nls has been given,
   dnl because they are needed for "make dist" to work.
@@ -3535,7 +3594,7 @@ AC_DEFUN([AM_XGETTEXT_OPTION],
 ])
 
 # printf-posix.m4 serial 6 (gettext-0.18.2)
-dnl Copyright (C) 2003, 2007, 2009-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2003, 2007, 2009-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -3584,7 +3643,7 @@ int main ()
 ])
 
 # progtest.m4 serial 7 (gettext-0.18.2)
-dnl Copyright (C) 1996-2003, 2005, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1996-2003, 2005, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -3676,7 +3735,7 @@ AC_SUBST([$1])dnl
 ])
 
 # size_max.m4 serial 10
-dnl Copyright (C) 2003, 2005-2006, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2003, 2005-2006, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -3756,7 +3815,7 @@ m4_ifdef([AC_COMPUTE_INT], [], [
 ])
 
 # stdint_h.m4 serial 9
-dnl Copyright (C) 1997-2004, 2006, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1997-2004, 2006, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -3783,8 +3842,8 @@ AC_DEFUN([gl_AC_HEADER_STDINT_H],
   fi
 ])
 
-# threadlib.m4 serial 10 (gettext-0.18.2)
-dnl Copyright (C) 2005-2013 Free Software Foundation, Inc.
+# threadlib.m4 serial 11 (gettext-0.18.2)
+dnl Copyright (C) 2005-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -3807,7 +3866,7 @@ dnl libtool).
 dnl Sets the variables LIBMULTITHREAD and LTLIBMULTITHREAD similarly, for
 dnl programs that really need multithread functionality. The difference
 dnl between LIBTHREAD and LIBMULTITHREAD is that on platforms supporting weak
-dnl symbols, typically LIBTHREAD="" whereas LIBMULTITHREAD="-lpthread".
+dnl symbols, typically LIBTHREAD is empty whereas LIBMULTITHREAD is not.
 dnl Adds to CPPFLAGS the flag -D_REENTRANT or -D_THREAD_SAFE if needed for
 dnl multithread-safe programs.
 
@@ -3947,15 +4006,31 @@ int main ()
         # Test whether both pthread_mutex_lock and pthread_mutexattr_init exist
         # in libc. IRIX 6.5 has the first one in both libc and libpthread, but
         # the second one only in libpthread, and lock.c needs it.
-        AC_LINK_IFELSE(
-          [AC_LANG_PROGRAM(
-             [[#include <pthread.h>]],
-             [[pthread_mutex_lock((pthread_mutex_t*)0);
-               pthread_mutexattr_init((pthread_mutexattr_t*)0);]])],
-          [gl_have_pthread=yes])
+        #
+        # If -pthread works, prefer it to -lpthread, since Ubuntu 14.04
+        # needs -pthread for some reason.  See:
+        # http://lists.gnu.org/archive/html/bug-gnulib/2014-09/msg00023.html
+        save_LIBS=$LIBS
+        for gl_pthread in '' '-pthread'; do
+          LIBS="$LIBS $gl_pthread"
+          AC_LINK_IFELSE(
+            [AC_LANG_PROGRAM(
+               [[#include <pthread.h>
+                 pthread_mutex_t m;
+                 pthread_mutexattr_t ma;
+               ]],
+               [[pthread_mutex_lock (&m);
+                 pthread_mutexattr_init (&ma);]])],
+            [gl_have_pthread=yes
+             LIBTHREAD=$gl_pthread LTLIBTHREAD=$gl_pthread
+             LIBMULTITHREAD=$gl_pthread LTLIBMULTITHREAD=$gl_pthread])
+          LIBS=$save_LIBS
+          test -n "$gl_have_pthread" && break
+        done
+
         # Test for libpthread by looking for pthread_kill. (Not pthread_self,
         # since it is defined as a macro on OSF/1.)
-        if test -n "$gl_have_pthread"; then
+        if test -n "$gl_have_pthread" && test -z "$LIBTHREAD"; then
           # The program links fine without libpthread. But it may actually
           # need to link with libpthread in order to create multiple threads.
           AC_CHECK_LIB([pthread], [pthread_kill],
@@ -3970,7 +4045,7 @@ int main ()
                    [Define if the pthread_in_use() detection is hard.])
              esac
             ])
-        else
+        elif test -z "$gl_have_pthread"; then
           # Some library is needed. Try libpthread and libc_r.
           AC_CHECK_LIB([pthread], [pthread_kill],
             [gl_have_pthread=yes
@@ -4111,6 +4186,8 @@ dnl Linux 2.4/glibc    posix      -lpthread       Y      OK
 dnl
 dnl GNU Hurd/glibc     posix
 dnl
+dnl Ubuntu 14.04       posix      -pthread        Y      OK
+dnl
 dnl FreeBSD 5.3        posix      -lc_r           Y
 dnl                    posix      -lkse ?         Y
 dnl                    posix      -lpthread ?     Y
@@ -4156,7 +4233,7 @@ dnl   0.5 if the first test terminates OK but the second one loops endlessly,
 dnl   0.0 if the first test already loops endlessly.
 
 # uintmax_t.m4 serial 12
-dnl Copyright (C) 1997-2004, 2007-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 1997-2004, 2007-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -4187,7 +4264,7 @@ AC_DEFUN([gl_AC_TYPE_UINTMAX_T],
 ])
 
 # visibility.m4 serial 5 (gettext-0.18.2)
-dnl Copyright (C) 2005, 2008, 2010-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2005, 2008, 2010-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -4265,7 +4342,7 @@ AC_DEFUN([gl_VISIBILITY],
 ])
 
 # wchar_t.m4 serial 4 (gettext-0.18.2)
-dnl Copyright (C) 2002-2003, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2002-2003, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -4290,7 +4367,7 @@ AC_DEFUN([gt_TYPE_WCHAR_T],
 ])
 
 # wint_t.m4 serial 5 (gettext-0.18.2)
-dnl Copyright (C) 2003, 2007-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2003, 2007-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.
@@ -4323,7 +4400,7 @@ AC_DEFUN([gt_TYPE_WINT_T],
 ])
 
 # xsize.m4 serial 5
-dnl Copyright (C) 2003-2004, 2008-2013 Free Software Foundation, Inc.
+dnl Copyright (C) 2003-2004, 2008-2014 Free Software Foundation, Inc.
 dnl This file is free software; the Free Software Foundation
 dnl gives unlimited permission to copy and/or distribute it,
 dnl with or without modifications, as long as this notice is preserved.

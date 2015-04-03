@@ -57,11 +57,13 @@ void ags_config_set_build_id(AgsConfig *config, gchar *build_id);
  * #AgsConfig provides configuration to Advanced Gtk+ Sequencer.
  */
 
+AgsConfig *config;
 static gpointer ags_config_parent_class = NULL;
 
 static const gchar *ags_config_generic = AGS_CONFIG_GENERIC;
 static const gchar *ags_config_thread = AGS_CONFIG_THREAD;
 static const gchar *ags_config_devout = AGS_CONFIG_DEVOUT;
+static const gchar *ags_config_recall = AGS_CONFIG_RECALL;
 
 GType
 ags_config_get_type (void)
@@ -222,6 +224,8 @@ ags_config_load_defaults(AgsConfig *config)
   ags_config_set(config, ags_config_devout, "pcm-channels\0", "2\0");
   ags_config_set(config, ags_config_devout, "dsp-channels\0", "2\0");
   ags_config_set(config, ags_config_devout, "alsa-handle\0", "hw:0,0\0");
+
+  ags_config_set(config, ags_config_recall, "auto-sense\0", "true\0");
 }
 
 /**
@@ -339,6 +343,7 @@ ags_config_save(AgsConfig *config)
 				 &error);
     
     if(error != NULL){
+      g_message(error->message);
       //TODO:JK: do recovery
       goto ags_config_save_END;
     }
@@ -373,10 +378,19 @@ void
 ags_config_set(AgsConfig *config, gchar *group, gchar *key, gchar *value)
 {
   AgsMain *ags_main;
-
+  gchar *old_value;
+  GError *error;
+  
   ags_main = config->ags_main;
 
-  g_key_file_set_value(config->key_file, group, key, value);
+  error = NULL;
+  old_value = g_key_file_get_value(config->key_file, group, key, &error);
+
+  if(error != NULL && old_value != NULL){
+    g_free(old_value);
+  }
+  
+  g_key_file_set_value(config->key_file, group, key, g_strdup(value));
 
   if(!strncmp(group,
 	      ags_config_generic,
@@ -507,10 +521,16 @@ ags_config_get(AgsConfig *config, gchar *group, gchar *key)
 {
   gchar *str;
   GError *error;
+  
+  pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+  pthread_mutex_lock(&mutex);
+  
   error = NULL;
 
   str = g_key_file_get_value(config->key_file, group, key, &error);
+
+  pthread_mutex_unlock(&mutex);
 
   return(str);
 }

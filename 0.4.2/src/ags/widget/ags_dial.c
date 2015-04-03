@@ -607,6 +607,18 @@ ags_dial_draw(AgsDial *dial)
     cairo_show_text (cr, "-\0");
   }
 
+
+  /* border fill */
+  cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 1.0);
+  cairo_set_line_width(cr, 3.0);
+  cairo_arc (cr,
+	     1.0 + button_width + margin_left + radius,
+	     radius + outline_strength,
+	     radius + 2.0,
+	     -1.0 * M_PI,
+	     1.0 * M_PI);
+  cairo_stroke(cr);
+
   /* background */
   cairo_set_source_rgba(cr, 0.5, 0.3, 0.9, 1.0);
   cairo_arc (cr,
@@ -698,11 +710,15 @@ ags_dial_draw(AgsDial *dial)
   if(dial->adjustment->upper >= 0.0 && dial->adjustment->lower >= 0.0){
     range = (dial->adjustment->upper - dial->adjustment->lower);
   }else if(dial->adjustment->upper < 0.0 && dial->adjustment->lower < 0.0){
-    range = -1.0 * (dial->adjustment->upper + dial->adjustment->lower);
+    range = -1.0 * (dial->adjustment->lower - dial->adjustment->upper);
   }else{
     range = (dial->adjustment->upper - dial->adjustment->lower);
   }
 
+  if(range == 0.0){
+    g_warning("ags_dial.c - range = 0.0\0");
+  }
+  
   if(dial->adjustment->lower < 0.0){
     translated_value = (gdouble) scale_precision * (dial->adjustment->value - dial->adjustment->lower) / range;
   }else{

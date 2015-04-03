@@ -387,9 +387,9 @@ ags_navigation_tic_callback(AgsDevout *devout,
 
   list = NULL;
 
-  change_tact = ags_change_tact_new(navigation);
-  list = g_list_prepend(list,
-			change_tact);
+  //  change_tact = ags_change_tact_new(navigation);
+  //  list = g_list_prepend(list,
+  //			change_tact);
 
   display_tact = ags_display_tact_new(navigation);
   list = g_list_prepend(list,

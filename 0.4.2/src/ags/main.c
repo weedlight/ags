@@ -74,11 +74,14 @@ void ags_signal_handler(int signr);
 static gpointer ags_main_parent_class = NULL;
 static sigset_t ags_wait_mask;
 
+pthread_mutex_t ags_application_mutex = PTHREAD_MUTEX_INITIALIZER;
 static const gchar *ags_config_thread = AGS_CONFIG_THREAD;
 static const gchar *ags_config_devout = AGS_CONFIG_DEVOUT;
 
 extern void ags_thread_resume_handler(int sig);
 extern void ags_thread_suspend_handler(int sig);
+
+extern AgsConfig *config;
 
 extern GtkStyle *matrix_style;
 extern GtkStyle *ffplayer_style;
@@ -211,9 +214,9 @@ ags_main_init(AgsMain *ags_main)
 			     wdir,
 			     AGS_DEFAULT_CONFIG);
 
-  ags_main->config = ags_config_new();
+  ags_main->config = config;
   //TODO:JK: ugly
-  ags_main->config->ags_main = ags_main;
+  config->ags_main = ags_main;
 
   g_free(filename);
   g_free(wdir);
@@ -629,6 +632,8 @@ ags_main_register_recall_type()
   ags_peak_channel_run_get_type();
 
   ags_recall_ladspa_get_type();
+  ags_recall_channel_run_dummy_get_type();
+  ags_recall_ladspa_run_get_type();
 
   ags_delay_audio_get_type();
   ags_delay_audio_run_get_type();
@@ -762,7 +767,7 @@ main(int argc, char **argv)
   guint i;
 
   const char *error;
-  const rlim_t kStackSize = 64L * 1024L * 1024L;   // min stack size = 64 Mb
+  const rlim_t kStackSize = 128L * 1024L * 1024L;   // min stack size = 128 Mb
 
   //  mtrace();
   atexit(ags_signal_cleanup);
@@ -819,32 +824,35 @@ main(int argc, char **argv)
     }
   }
 
+  config = ags_config_new();
+  uid = getuid();
+  pw = getpwuid(uid);
+  
+  wdir = g_strdup_printf("%s/%s\0",
+			 pw->pw_dir,
+			 AGS_DEFAULT_DIRECTORY);
+
+  config_file = g_strdup_printf("%s/%s\0",
+				wdir,
+				AGS_DEFAULT_CONFIG);
+
+  ags_config_load_from_file(config,
+			    config_file);
+
+  g_free(wdir);
+  g_free(config_file);
+
   if(filename != NULL){
     AgsFile *file;
 
     file = g_object_new(AGS_TYPE_FILE,
 			"filename\0", filename,
 			NULL);
+    ags_file_open(file);
     ags_file_read(file);
 
     ags_main = AGS_MAIN(file->ags_main);
-
-    uid = getuid();
-    pw = getpwuid(uid);
-  
-    wdir = g_strdup_printf("%s/%s\0",
-			   pw->pw_dir,
-			   AGS_DEFAULT_DIRECTORY);
-
-    config_file = g_strdup_printf("%s/%s\0",
-				  wdir,
-				  AGS_DEFAULT_CONFIG);
-
-   ags_config_load_from_file(ags_main->config,
-			     config_file);
-
-    g_free(wdir);
-    g_free(config_file);
+    ags_file_close(file);
 
     ags_thread_start(ags_main->main_loop);
 
@@ -959,23 +967,6 @@ main(int argc, char **argv)
       /* start thread tree */
       ags_thread_start((AgsThread *) single_thread);
     }
-
-    uid = getuid();
-    pw = getpwuid(uid);
-  
-    wdir = g_strdup_printf("%s/%s\0",
-			   pw->pw_dir,
-			   AGS_DEFAULT_DIRECTORY);
-
-    config_file = g_strdup_printf("%s/%s\0",
-				  wdir,
-				  AGS_DEFAULT_CONFIG);
-
-    ags_config_load_from_file(ags_main->config,
-			      config_file);
-
-    g_free(wdir);
-    g_free(config_file);
 
     if(!single_thread){
       /* join gui thread */

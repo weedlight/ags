@@ -978,6 +978,10 @@ ags_recall_connect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 
   recall = AGS_RECALL(dynamic_connectable);
 
+#ifdef AGS_DEBUG
+      g_message("dynamic connect: %s\0", G_OBJECT_TYPE_NAME(recall));
+#endif
+
   /* connect children */
   list = recall->children;
 
@@ -998,7 +1002,8 @@ ags_recall_connect_dynamic(AgsDynamicConnectable *dynamic_connectable)
     list = list->next;
   }
 
-  recall->flags |= AGS_RECALL_RUN_INITIALIZED;
+  //TODO:JK: fixme
+  recall->flags |= AGS_RECALL_DYNAMIC_CONNECTED;
 }
 
 void
@@ -1029,8 +1034,6 @@ ags_recall_disconnect_dynamic(AgsDynamicConnectable *dynamic_connectable)
 
     list = list->next;
   }
-
-  recall->flags &= (~AGS_RECALL_RUN_INITIALIZED);
 }
 
 gchar*
@@ -1150,11 +1153,11 @@ ags_recall_finalize(GObject *gobject)
   }
 
   if((AGS_RECALL_CONNECTED & (recall->flags)) != 0){
-    ags_connectable_disconnect(AGS_CONNECTABLE(recall));
+    //    ags_connectable_disconnect(AGS_CONNECTABLE(recall));
   }
 
-  if((AGS_RECALL_RUN_INITIALIZED & (recall->flags)) != 0){
-    ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(recall));
+  if((AGS_RECALL_DYNAMIC_CONNECTED & (recall->flags)) != 0){
+    //    ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(recall));
   }
 
   //  if(recall->name != NULL)
@@ -1344,7 +1347,8 @@ ags_recall_real_run_init_post(AgsRecall *recall)
     list = list->next;
   }
 
-  recall->flags |= AGS_RECALL_INITIAL_RUN;
+  recall->flags |= (AGS_RECALL_INITIAL_RUN |
+		    AGS_RECALL_RUN_INITIALIZED);
 }
 
 /**
@@ -1369,18 +1373,22 @@ ags_recall_run_init_post(AgsRecall *recall)
 void
 ags_recall_real_run_pre(AgsRecall *recall)
 {
-  GList *list;
+  GList *list, *list_next;
 
   list = recall->children;
 
   while(list != NULL){
+    list_next = list->next;
+
     if((AGS_RECALL_TEMPLATE & (AGS_RECALL(list->data)->flags)) != 0){
       g_warning("running on template\0");
+      list = list->next;
+      continue;
     }
 
     ags_recall_run_pre(AGS_RECALL(list->data));
 
-    list = list->next;
+    list = list_next;
   }
 }
 
@@ -1406,18 +1414,22 @@ ags_recall_run_pre(AgsRecall *recall)
 void
 ags_recall_real_run_inter(AgsRecall *recall)
 {
-  GList *list;
+  GList *list, *list_next;
 
   list = recall->children;
 
   while(list != NULL){
+    list_next = list->next;
+
     if((AGS_RECALL_TEMPLATE & (AGS_RECALL(list->data)->flags)) != 0){
       g_warning("running on template\0");
+      list = list->next;
+      continue;
     }
 
     ags_recall_run_inter(AGS_RECALL(list->data));
 
-    list = list->next;
+    list = list_next;
   }
 }
 
@@ -1452,6 +1464,8 @@ ags_recall_real_run_post(AgsRecall *recall)
 
     if((AGS_RECALL_TEMPLATE & (AGS_RECALL(list->data)->flags)) != 0){
       g_warning("running on template\0");
+      list = list->next;
+      continue;
     }
 
     ags_recall_run_post(AGS_RECALL(list->data));
@@ -1505,6 +1519,10 @@ ags_recall_real_stop_persistent(AgsRecall *recall)
 void
 ags_recall_stop_persistent(AgsRecall *recall)
 {
+  if((AGS_RECALL_DONE & (recall->flags)) != 0){
+    return;
+  }
+
   recall->flags &= (~(AGS_RECALL_PERSISTENT |
 		      AGS_RECALL_PERSISTENT_PLAYBACK |
 		      AGS_RECALL_PERSISTENT_SEQUENCER |
@@ -1516,6 +1534,10 @@ ags_recall_stop_persistent(AgsRecall *recall)
 void
 ags_recall_real_done(AgsRecall *recall)
 {
+  if((AGS_RECALL_DONE & (recall->flags)) != 0){
+    return;
+  }
+  
   recall->flags |= AGS_RECALL_DONE;
 
   ags_recall_remove(recall);
@@ -1559,13 +1581,13 @@ ags_recall_real_cancel(AgsRecall *recall)
   }
 
   /* call cancel for children */
-  list = recall->children;
+  //  list = recall->children;
 
-  while(list != NULL){
-    ags_recall_cancel(AGS_RECALL(list->data));
+  //  while(list != NULL){
+  //    ags_recall_cancel(AGS_RECALL(list->data));
 
-    list = list->next;
-  }
+  //    list = list->next;
+  //  }
 
   if((AGS_RECALL_PERSISTENT & (recall->flags)) != 0 ||
      (AGS_RECALL_PERSISTENT_PLAYBACK & (recall->flags)) != 0){
@@ -1599,7 +1621,11 @@ ags_recall_real_remove(AgsRecall *recall)
 {
   AgsRecall *parent;
 
-  ags_dynamic_connectable_disconnect_dynamic(AGS_DYNAMIC_CONNECTABLE(recall));
+  if(recall == NULL){
+    return;
+  }
+
+  g_object_ref(recall);
 
   if(recall->parent == NULL){
     parent = NULL;
@@ -1608,16 +1634,17 @@ ags_recall_real_remove(AgsRecall *recall)
   }else{
     parent = AGS_RECALL(recall->parent);
 
-    parent->children = g_list_remove(parent->children, recall);
+    ags_recall_remove_child(parent,
+			    recall);
   }
 
+  /* propagate done */
   if(parent != NULL &&
      (AGS_RECALL_PROPAGATE_DONE & (parent->flags)) != 0 &&
+     (AGS_RECALL_PERSISTENT & (parent->flags)) == 0 &&
      parent->children == NULL){
     ags_recall_done(parent);
   }
-
-  g_object_unref(recall);
 }
 
 /**
@@ -1637,6 +1664,7 @@ ags_recall_remove(AgsRecall *recall)
   g_signal_emit(G_OBJECT(recall),
 		recall_signals[REMOVE], 0);
   g_object_unref(G_OBJECT(recall));
+  g_object_unref(recall);
 }
 
 /**
@@ -1667,7 +1695,8 @@ ags_recall_is_done(GList *recalls, GObject *recycling_container)
        recall->recall_id != NULL &&
        recall->recall_id->recycling_container == recycling_container){
       if((AGS_RECALL_DONE & (recall->flags)) == 0){
-	g_message("%s\0", G_OBJECT_TYPE_NAME(recall));
+	recall->flags &= (~AGS_RECALL_RUN_INITIALIZED);
+	g_message("done: %s\0", G_OBJECT_TYPE_NAME(recall));
 	return(FALSE);
       }
     }
@@ -1698,7 +1727,13 @@ ags_recall_real_duplicate(AgsRecall *recall,
 
   copy = g_object_newv(G_OBJECT_TYPE(recall), *n_params, parameter);
 
-  ags_recall_set_flags(copy, (recall->flags & (~AGS_RECALL_TEMPLATE)));
+  ags_recall_set_flags(copy,
+		       (recall->flags & (~ (AGS_RECALL_TEMPLATE |
+					    AGS_RECALL_RUN_INITIALIZED |
+					    AGS_RECALL_CONNECTED |
+					    AGS_RECALL_DYNAMIC_CONNECTED))));
+
+  copy->child_type = recall->child_type;
 
   /* duplicate handlers */
   list = recall->handlers;
@@ -1883,9 +1918,16 @@ ags_recall_get_dependencies(AgsRecall *recall)
 void
 ags_recall_remove_child(AgsRecall *recall, AgsRecall *child)
 {
+  if(recall == NULL ||
+     child == NULL ||
+     child->parent != recall){
+    return;
+  }
+  
   recall->children = g_list_remove(recall->children,
 				   child);
-
+  child->parent = NULL;
+  
   g_object_unref(recall);
   g_object_unref(child);
 }
@@ -1947,7 +1989,7 @@ ags_recall_add_child(AgsRecall *parent, AgsRecall *child)
 		 "recall_id\0", parent->recall_id,
 		 NULL);
     g_signal_connect(G_OBJECT(child), "done\0",
-		     G_CALLBACK(ags_recall_child_done), parent);
+    		     G_CALLBACK(ags_recall_child_done), parent);
   }
   
   child->parent = parent;
@@ -1960,15 +2002,13 @@ ags_recall_add_child(AgsRecall *parent, AgsRecall *child)
   ags_connectable_connect(AGS_CONNECTABLE(child));
 
   if(parent != NULL &&
-     (AGS_RECALL_RUN_INITIALIZED & (parent->flags)) != 0 &&
-     (AGS_RECALL_RUN_INITIALIZED & (child->flags)) == 0){
+     (AGS_RECALL_DYNAMIC_CONNECTED & (parent->flags)) != 0 &&
+     (AGS_RECALL_DYNAMIC_CONNECTED & (child->flags)) == 0){
+    ags_dynamic_connectable_connect_dynamic(AGS_DYNAMIC_CONNECTABLE(child));
+
     ags_recall_run_init_pre(AGS_RECALL(child));
     ags_recall_run_init_inter(AGS_RECALL(child));
     ags_recall_run_init_post(AGS_RECALL(child));
-
-    ags_dynamic_connectable_connect_dynamic(AGS_DYNAMIC_CONNECTABLE(child));
-    
-    child->flags |= AGS_RECALL_RUN_INITIALIZED;
   }
 }
 
@@ -2132,7 +2172,7 @@ ags_recall_find_type_with_recycling_container(GList *recall_i, GType type, GObje
   while(recall_i != NULL){
     recall = AGS_RECALL(recall_i->data);
 
-    if(G_OBJECT_TYPE(recall) == type &&
+    if(g_type_is_a(G_OBJECT_TYPE(recall), type) &&
        recall->recall_id != NULL &&
        recall->recall_id->recycling_container == recycling_container)
       return(recall_i);
@@ -2383,6 +2423,11 @@ void
 ags_recall_child_done(AgsRecall *child,
 		      AgsRecall *parent)
 {
+  if(child == NULL ||
+     parent == NULL){
+    return;
+  }
+  
   ags_recall_remove_child(parent,
 			  child);
 }

@@ -30,7 +30,7 @@ void ags_main_loop_base_init(AgsMainLoopInterface *interface);
  * @include: ags/object/ags_main_loop.h
  *
  * The #AgsMainLoop interface gives you a unique access to toplevel
- * threads.
+ * threads and has to be implemented for it.
  */
 
 GType
@@ -59,6 +59,15 @@ ags_main_loop_base_init(AgsMainLoopInterface *interface)
   /* empty */
 }
 
+/**
+ * ags_main_loop_set_async_queue:
+ * @main_loop: the #AgsMainLoop
+ * @async_queue: the #AgsAsyncQueue
+ *
+ * Sets the asynchronous queue.
+ *
+ * Since: 0.4
+ */
 void
 ags_main_loop_set_async_queue(AgsMainLoop *main_loop, AgsAsyncQueue *async_queue)
 {
@@ -70,6 +79,16 @@ ags_main_loop_set_async_queue(AgsMainLoop *main_loop, AgsAsyncQueue *async_queue
   main_loop_interface->set_async_queue(main_loop, async_queue);
 }
 
+/**
+ * ags_main_loop_get_async_queue:
+ * @main_loop: the #AgsMainLoop
+ *
+ * Retrieve the #AgsAsyncQueue.
+ *
+ * Returns: the #AgsAsyncQueue
+ *
+ * Since: 0.4
+ */
 AgsAsyncQueue*
 ags_main_loop_get_async_queue(AgsMainLoop *main_loop)
 {
@@ -87,6 +106,8 @@ ags_main_loop_get_async_queue(AgsMainLoop *main_loop)
  * @tic: tic
  *
  * Sets tic to @tic. 
+ *
+ * Since: 0.4
  */
 void
 ags_main_loop_set_tic(AgsMainLoop *main_loop, guint tic)
@@ -103,9 +124,11 @@ ags_main_loop_set_tic(AgsMainLoop *main_loop, guint tic)
  * ags_main_loop_get_tic:
  * @main_loop: the #AgsMainLoop
  *
- * Retrieve tic.
+ * Retrieve current tic of synchronization context.
  *
- * Returns: tic
+ * Returns: current tic
+ *
+ * Since: 0.4
  */
 guint
 ags_main_loop_get_tic(AgsMainLoop *main_loop)
@@ -124,6 +147,8 @@ ags_main_loop_get_tic(AgsMainLoop *main_loop)
  * @last_sync: last sync
  *
  * Sets last sync to @last_sync. 
+ *
+ * Since: 0.4
  */
 void
 ags_main_loop_set_last_sync(AgsMainLoop *main_loop, guint last_sync)
@@ -140,9 +165,11 @@ ags_main_loop_set_last_sync(AgsMainLoop *main_loop, guint last_sync)
  * ags_main_loop_get_last_sync:
  * @main_loop: the #AgsMainLoop
  *
- * Retrieve last sync.
+ * Retrieve last sync as tic of synchronization context.
  *
- * Returns: last sync
+ * Returns: last synced tic
+ *
+ * Since: 0.4
  */
 guint
 ags_main_loop_get_last_sync(AgsMainLoop *main_loop)

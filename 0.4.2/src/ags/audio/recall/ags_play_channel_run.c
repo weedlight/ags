@@ -40,6 +40,8 @@
 #include <ags/audio/recall/ags_stream_recycling.h>
 #include <ags/audio/recall/ags_stream_audio_signal.h>
 
+#include <ags/audio/task/ags_cancel_channel.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -376,7 +378,8 @@ ags_play_channel_run_run_pre(AgsRecall *recall)
   AgsDevout *devout;
   AgsRecycling *recycling;
   AgsAudioSignal *audio_signal;
-  guint delay, attack;
+  gdouble delay;
+  guint attack;
   guint tic_counter_incr;
 
   devout = AGS_DEVOUT(recall->devout);
@@ -397,7 +400,7 @@ ags_play_channel_run_run_pre(AgsRecall *recall)
   attack = 0; //devout->attack[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
     //		   0:
     //			   tic_counter_incr)];
-  delay = 0; // devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+  delay = 0.0; // devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
     //		 0:
     //			 tic_counter_incr)];
 
@@ -555,26 +558,20 @@ ags_play_channel_run_stream_audio_signal_done_callback(AgsRecall *recall,
 void
 ags_play_channel_run_stop(AgsPlayChannelRun *play_channel_run)
 {
-  AgsAudioLoop *audio_loop;
-  AgsChannel *source;
+  AgsThread *task_thread;
+  AgsChannel *channel;
+  AgsCancelChannel *cancel_channel;
 
-  source = AGS_RECALL_CHANNEL_RUN(play_channel_run)->source;
-  audio_loop = AGS_AUDIO_LOOP(AGS_MAIN(AGS_DEVOUT(AGS_AUDIO(source->audio)->devout)->ags_main)->main_loop);
+  channel = AGS_RECALL_CHANNEL_RUN(play_channel_run)->source;
+  task_thread = (AgsTaskThread *) AGS_AUDIO_LOOP(AGS_MAIN(AGS_DEVOUT(AGS_AUDIO(channel->audio)->devout)->ags_main)->main_loop)->task_thread;
 
-  ags_channel_tillrecycling_cancel(source,
-				   AGS_RECALL(play_channel_run)->recall_id);
-
-  AGS_DEVOUT_PLAY(source->devout_play)->flags |= AGS_DEVOUT_PLAY_DONE;
-
-  AGS_DEVOUT_PLAY(source->devout_play)->recall_id[0] = NULL;
-  AGS_DEVOUT_PLAY(source->devout_play)->flags &= (~(AGS_DEVOUT_PLAY_PLAYBACK |
-						    AGS_DEVOUT_PLAY_DONE));
-
-  ags_channel_done(source,
-		   AGS_RECALL(play_channel_run)->recall_id);
-
-  ags_audio_loop_remove_channel(audio_loop,
-				source);
+  /* create append task */
+  cancel_channel = ags_cancel_channel_new(channel,
+					  AGS_DEVOUT_PLAY(channel->devout_play)->recall_id[0], TRUE);
+  
+  /* append AgsCancelAudio */
+  ags_task_thread_append_task(task_thread,
+			      cancel_channel);
 }
 
 /**

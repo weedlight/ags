@@ -33,6 +33,7 @@
 #include <math.h>
 #include <time.h>
 
+#include <ags/audio/ags_config.h>
 #include <ags/audio/ags_notation.h>
 
 /**
@@ -92,6 +93,8 @@ enum{
   TIC,
   LAST_SIGNAL,
 };
+
+extern AgsConfig *config;
 
 static gpointer ags_devout_parent_class = NULL;
 static guint devout_signals[LAST_SIGNAL];
@@ -369,22 +372,42 @@ ags_devout_connectable_interface_init(AgsConnectableInterface *connectable)
 void
 ags_devout_init(AgsDevout *devout)
 {
+  gdouble delay;
   guint default_tact_frames;
+  guint default_period;
   guint i;
   
   /* flags */
   devout->flags = (AGS_DEVOUT_ALSA);
 
   /* quality */
-  devout->dsp_channels = 2;
-  devout->pcm_channels = 2;
+  devout->dsp_channels = g_ascii_strtoull(ags_config_get(config,
+							 AGS_CONFIG_DEVOUT,
+							 "dsp-channels\0"),
+					  NULL,
+					  10);
+  devout->pcm_channels = g_ascii_strtoull(ags_config_get(config,
+							 AGS_CONFIG_DEVOUT,
+							 "pcm-channels\0"),
+					  NULL,
+					  10);
   devout->bits = AGS_DEVOUT_DEFAULT_FORMAT;
-  devout->buffer_size = AGS_DEVOUT_DEFAULT_BUFFER_SIZE;
-  devout->frequency = AGS_DEVOUT_DEFAULT_SAMPLERATE;
+  devout->buffer_size = g_ascii_strtoull(ags_config_get(config,
+							AGS_CONFIG_DEVOUT,
+							"buffer-size\0"),
+					 NULL,
+					 10);
+  devout->frequency = g_ascii_strtoull(ags_config_get(config,
+						      AGS_CONFIG_DEVOUT,
+						      "samplerate\0"),
+				       NULL,
+				       10);
 
   //  devout->out.oss.device = NULL;
   devout->out.alsa.handle = NULL;
-  devout->out.alsa.device = g_strdup("hw:0\0");
+  devout->out.alsa.device = g_strdup(ags_config_get(config,
+						    AGS_CONFIG_DEVOUT,
+						    "alsa-handle\0"));
 
   /* buffer */
   devout->buffer = (signed short **) malloc(4 * sizeof(signed short*));
@@ -397,23 +420,28 @@ ags_devout_init(AgsDevout *devout)
   devout->bpm = AGS_DEVOUT_DEFAULT_BPM;
 
   /* delay and attack */
-  devout->delay = (gdouble *) malloc((int) AGS_DEVOUT_DEFAULT_PERIOD *
+  devout->delay = (gdouble *) malloc((int) 2 * AGS_DEVOUT_DEFAULT_PERIOD *
 				     sizeof(gdouble));
-
-  devout->attack = (guint *) malloc((int) AGS_DEVOUT_DEFAULT_PERIOD *
+  
+  devout->attack = (guint *) malloc((int) 2 * AGS_DEVOUT_DEFAULT_PERIOD *
 				    sizeof(guint));
-
-  default_tact_frames = (guint) (AGS_DEVOUT_DEFAULT_DELAY * AGS_DEVOUT_DEFAULT_BUFFER_SIZE);
+  
+  delay = ((gdouble) devout->frequency / (gdouble) devout->buffer_size) * (gdouble)(60.0 / devout->bpm);
+  //  g_message("delay : %f\0", delay);
+  default_tact_frames = (guint) (delay * devout->buffer_size);
+  default_period = (1.0 / AGS_DEVOUT_DEFAULT_PERIOD) * (default_tact_frames);
 
   devout->attack[0] = 0;
-  devout->delay[0] = 0.0;
-
-  for(i = 1; i < (int) AGS_DEVOUT_DEFAULT_PERIOD / 2.0; i++){
-    devout->attack[i] = (i * default_tact_frames) % (AGS_DEVOUT_DEFAULT_BUFFER_SIZE);
+  devout->delay[0] = delay;
+  
+  for(i = 1; i < (int)  2.0 * AGS_DEVOUT_DEFAULT_PERIOD; i++){
+    devout->attack[i] = (guint) ((i * default_tact_frames + devout->attack[i - 1]) / (AGS_DEVOUT_DEFAULT_PERIOD / (delay * i))) % (guint) (devout->buffer_size);
+    //    g_message("%d\0", devout->attack[i]);
   }
-
-  for(i = 1; i < (int) AGS_DEVOUT_DEFAULT_PERIOD / 2.0; i++){
-    devout->delay[i] = (default_tact_frames + (gdouble) devout->attack[i]) / AGS_DEVOUT_DEFAULT_BUFFER_SIZE;
+  
+  for(i = 1; i < (int) 2.0 * AGS_DEVOUT_DEFAULT_PERIOD; i++){
+    devout->delay[i] = ((gdouble) (default_tact_frames + devout->attack[i])) / (gdouble) devout->buffer_size;
+    //    g_message("%f\0", devout->delay[i]);
   }
 
   /*  */
@@ -1135,7 +1163,7 @@ ags_devout_alsa_init(AgsDevout *devout,
   buffer_size = size;
 
   /* set the period time */
-  period_time = MSEC_PER_SEC / AGS_DEVOUT_DEFAULT_SAMPLERATE;
+  period_time = MSEC_PER_SEC / devout->frequency;
   dir = -1;
   err = snd_pcm_hw_params_set_period_time_near(handle, hwparams, &period_time, &dir);
   if (err < 0) {
@@ -1196,7 +1224,9 @@ ags_devout_alsa_init(AgsDevout *devout,
 void
 ags_devout_alsa_play(AgsDevout *devout,
 		     GError **error)
-{    
+{
+  gdouble delay;
+
   /*  */
   if((AGS_DEVOUT_BUFFER0 & (devout->flags)) != 0){
     memset(devout->buffer[3], 0, (size_t) devout->dsp_channels * devout->buffer_size * sizeof(signed short));
@@ -1340,22 +1370,23 @@ ags_devout_alsa_play(AgsDevout *devout,
   }
 
   /* determine if attack should be switched */
-  devout->delay_counter += 1.0; //AGS_DEVOUT_DEFAULT_JIFFIE
+  delay = devout->delay[devout->tic_counter];
+  devout->delay_counter += 1.0;
 
   ///TODO:JK: fix me
-  if(devout->delay_counter >= (gdouble) AGS_DEVOUT_DEFAULT_DELAY){ //devout->delay[devout->tic_counter]
-    /* tic */
-    ags_devout_tic(devout);
-
+  if(devout->delay_counter >= delay){ //devout->delay[devout->tic_counter]
     devout->tic_counter += 1;
 
-    if(devout->tic_counter == (guint) AGS_DEVOUT_DEFAULT_PERIOD){
+    if(devout->tic_counter == AGS_DEVOUT_DEFAULT_PERIOD){
       devout->tic_counter = 0;
     }
 
     /* delay */
-    devout->delay_counter = 0;
+    devout->delay_counter = 0.0;
   } 
+
+  /* tic */
+  ags_devout_tic(devout);
 
   /* switch buffer flags */
   ags_devout_switch_buffer_flag(devout);

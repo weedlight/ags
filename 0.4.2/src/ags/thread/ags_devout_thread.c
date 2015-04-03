@@ -20,9 +20,13 @@
 
 #include <ags-lib/object/ags_connectable.h>
 
+#include <ags/main.h>
+
 #include <ags/thread/ags_timestamp_thread.h>
 
 #include <ags/audio/ags_devout.h>
+
+#include <ags/audio/ags_config.h>
 
 void ags_devout_thread_class_init(AgsDevoutThreadClass *devout_thread);
 void ags_devout_thread_connectable_interface_init(AgsConnectableInterface *connectable);
@@ -35,6 +39,8 @@ void ags_devout_thread_start(AgsThread *thread);
 void ags_devout_thread_run(AgsThread *thread);
 void ags_devout_thread_stop(AgsThread *thread);
 
+extern AgsConfig *config;
+
 /**
  * SECTION:ags_devout_thread
  * @short_description: devout thread
@@ -45,6 +51,7 @@ void ags_devout_thread_stop(AgsThread *thread);
  * The #AgsDevoutThread acts as audio output thread to soundcard.
  */
 
+extern pthread_mutex_t ags_application_mutex;
 static gpointer ags_devout_thread_parent_class = NULL;
 static AgsConnectableInterface *ags_devout_thread_parent_connectable_interface;
 
@@ -119,11 +126,23 @@ void
 ags_devout_thread_init(AgsDevoutThread *devout_thread)
 {
   AgsThread *thread;
+  guint buffer_size;
+  guint samplerate;
 
   thread = AGS_THREAD(devout_thread);
 
-  thread->freq = AGS_DEVOUT_THREAD_DEFAULT_JIFFIE;
+  buffer_size = g_ascii_strtoull(ags_config_get(config,
+						AGS_CONFIG_DEVOUT,
+						"buffer-size"),
+				 NULL,
+				 10);
+  samplerate = g_ascii_strtoull(ags_config_get(config,
+					       AGS_CONFIG_DEVOUT,
+					       "samplerate"),
+				NULL,
+				10);
 
+  thread->freq = samplerate / buffer_size;
   devout_thread->timestamp_thread = ags_timestamp_thread_new();
   ags_thread_add_child(thread, devout_thread->timestamp_thread);
 
@@ -213,6 +232,8 @@ ags_devout_thread_run(AgsThread *thread)
 
   devout_thread = AGS_DEVOUT_THREAD(thread);
 
+  pthread_mutex_lock(&(ags_application_mutex));
+
   devout = AGS_DEVOUT(thread->devout);
 
   //  delay = (long) floor(NSEC_PER_SEC / devout->frequency * devout->buffer_size);
@@ -231,6 +252,8 @@ ags_devout_thread_run(AgsThread *thread)
   if(error != NULL){
     //TODO:JK: implement me
   }
+
+  pthread_mutex_unlock(&(ags_application_mutex));
 }
 
 void

@@ -148,7 +148,8 @@ ags_add_audio_signal_launch(AgsTask *task)
   AgsAddAudioSignal *add_audio_signal;
   AgsAudioSignal *audio_signal, *old_template;
   AgsRecallID *recall_id;
-  guint attack, delay;
+  gdouble delay;
+  guint attack;
   guint tic_counter_incr;
 
   add_audio_signal = AGS_ADD_AUDIO_SIGNAL(task);
@@ -182,7 +183,7 @@ ags_add_audio_signal_launch(AgsTask *task)
   attack = 0; //devout->attack[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
     //		   0:
     //			   tic_counter_incr)];
-  delay = 0; //devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
+  delay = 0.0; //devout->delay[((tic_counter_incr == AGS_NOTATION_TICS_PER_BEAT) ?
   //		 0:
   //			 tic_counter_incr)];
   

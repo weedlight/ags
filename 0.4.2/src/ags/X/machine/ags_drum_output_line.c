@@ -37,6 +37,8 @@
 #include <ags/audio/recall/ags_copy_pattern_audio_run.h>
 #include <ags/audio/recall/ags_stream_channel.h>
 #include <ags/audio/recall/ags_stream_channel_run.h>
+#include <ags/audio/recall/ags_loop_channel.h>
+#include <ags/audio/recall/ags_loop_channel_run.h>
 
 #include <ags/X/ags_window.h>
 
@@ -59,6 +61,8 @@ void ags_drum_output_line_read(AgsFile *file, xmlNode *node, AgsPlugin *plugin);
 xmlNode* ags_drum_output_line_write(AgsFile *file, xmlNode *parent, AgsPlugin *plugin);
 
 void ags_drum_output_line_set_channel(AgsLine *line, AgsChannel *channel);
+void ags_drum_output_line_map_recall(AgsLine *line,
+				     guint output_pad_start);
 
 /**
  * SECTION:ags_drum_output_line
@@ -130,6 +134,7 @@ ags_drum_output_line_class_init(AgsDrumOutputLineClass *drum_output_line)
   line = AGS_LINE_CLASS(drum_output_line);
 
   line->set_channel = ags_drum_output_line_set_channel;
+  line->map_recall = ags_drum_output_line_map_recall;
 }
 
 void
@@ -223,44 +228,30 @@ ags_drum_output_line_set_channel(AgsLine *line, AgsChannel *channel)
 
   drum_output_line = AGS_DRUM_OUTPUT_LINE(line);
 
-  if(line->channel != NULL){
-    line->flags &= (~AGS_LINE_MAPPED_RECALL);
-  }
-
   if(channel != NULL){
     AgsDevout *devout;
     AgsAudioSignal *audio_signal;
+    gdouble delay;
     guint stop;
 
-    devout = AGS_DEVOUT(AGS_AUDIO(channel->audio)->devout);
+    if(channel->audio != NULL &&
+       AGS_AUDIO(channel->audio)->devout != NULL){
+      devout = AGS_DEVOUT(AGS_AUDIO(channel->audio)->devout);
 
-    stop = (guint) ceil(16.0 * AGS_DEVOUT_DEFAULT_DELAY * exp2(8.0 - 4.0) + 1.0);
-
-    audio_signal = ags_audio_signal_new(devout,
-					channel->first_recycling,
-					NULL);
-    audio_signal->flags |= AGS_AUDIO_SIGNAL_TEMPLATE;
-    //    ags_audio_signal_stream_resize(audio_signal,
-    //				   stop);
-    ags_recycling_add_audio_signal(channel->first_recycling,
-				   audio_signal);
-
-    //    audio_signal = ags_audio_signal_get_template(channel->first_recycling->audio_signal);
-    //    ags_audio_signal_stream_resize(audio_signal, stop);
-    if((AGS_LINE_PREMAPPED_RECALL & (line->flags)) == 0){
-      ags_drum_output_line_add_default_recall(AGS_DRUM_OUTPUT_LINE(line));
-    }else{
-      line->flags &= (~AGS_LINE_PREMAPPED_RECALL);
+      audio_signal = ags_audio_signal_new(devout,
+					  channel->first_recycling,
+					  NULL);
+      audio_signal->flags |= AGS_AUDIO_SIGNAL_TEMPLATE;
+      ags_recycling_add_audio_signal(channel->first_recycling,
+				     audio_signal);
     }
   }
 }
 
 void
-ags_drum_output_line_add_default_recall(AgsDrumOutputLine *drum_output_line)
+ags_drum_output_line_map_recall(AgsLine *line,
+				guint output_pad_start)
 {
-  AgsDrum *drum;
-  AgsLine *line;
-
   AgsAudio *audio;
 
   AgsChannel *output;
@@ -269,15 +260,13 @@ ags_drum_output_line_add_default_recall(AgsDrumOutputLine *drum_output_line)
 
   GList *list;
 
-  printf("ags_drum_output_line_map_recall\n\0");
+  if((AGS_LINE_MAPPED_RECALL & (line->flags)) != 0 ||
+     (AGS_LINE_PREMAPPED_RECALL & (line->flags)) != 0){
+    return;
+  }
 
-  line = AGS_LINE(drum_output_line);
-  line->flags |= AGS_LINE_MAPPED_RECALL;
-
-  output = AGS_LINE(drum_output_line)->channel;
+  output = line->channel;
   audio = AGS_AUDIO(output->audio);
-
-  drum = AGS_DRUM(audio->machine);
 
   /* get some recalls */
   list = ags_recall_find_type(audio->play, AGS_TYPE_DELAY_AUDIO);
@@ -307,6 +296,9 @@ ags_drum_output_line_add_default_recall(AgsDrumOutputLine *drum_output_line)
 			     AGS_RECALL_FACTORY_RECALL | 
 			     AGS_RECALL_FACTORY_ADD),
 			    0);
+
+  AGS_LINE_CLASS(ags_drum_output_line_parent_class)->map_recall(line,
+								output_pad_start);
 }
 
 void

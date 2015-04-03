@@ -244,10 +244,10 @@ ags_recall_audio_signal_dynamic_connectable_interface_init(AgsDynamicConnectable
 void
 ags_recall_audio_signal_init(AgsRecallAudioSignal *recall_audio_signal)
 {
-  g_signal_connect(G_OBJECT(recall_audio_signal), "notify::devout\0",
-		   G_CALLBACK(ags_recall_audio_signal_notify_devout), NULL);
-  g_signal_connect_after(G_OBJECT(recall_audio_signal), "notify::devout\0",
-			 G_CALLBACK(ags_recall_audio_signal_notify_devout_after), NULL);
+  //  g_signal_connect(G_OBJECT(recall_audio_signal), "notify::devout\0",
+  //		   G_CALLBACK(ags_recall_audio_signal_notify_devout), NULL);
+  //  g_signal_connect_after(G_OBJECT(recall_audio_signal), "notify::devout\0",
+  //			 G_CALLBACK(ags_recall_audio_signal_notify_devout_after), NULL);
 
   recall_audio_signal->flags = AGS_RECALL_INITIAL_RUN;
   recall_audio_signal->audio_channel = 0;
@@ -387,10 +387,12 @@ ags_recall_audio_signal_finalize(GObject *gobject)
 
   if(recall_audio_signal->destination != NULL){
     g_object_unref(recall_audio_signal->destination);
+    recall_audio_signal->destination = NULL;
   }
 
   if(recall_audio_signal->source != NULL){
     g_object_unref(recall_audio_signal->source);
+    recall_audio_signal->source = NULL;
   }
 
   /* call parent */
@@ -549,6 +551,8 @@ ags_recall_audio_signal_notify_devout_after(AgsRecallAudioSignal *recall_audio_s
  * Creates an #AgsRecallAudioSignal.
  *
  * Returns: a new #AgsRecallAudioSignal.
+ *
+ * Since: 0.4
  */
 AgsRecallAudioSignal*
 ags_recall_audio_signal_new(AgsAudioSignal *destination,
